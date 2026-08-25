@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node
+node_modules/
+dist/
+
+# Ambiente
+.env
+
+# Mídia e banco de dados
+media/
+db.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
