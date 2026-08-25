@@ -1,9 +1,16 @@
+import io
+import os
 import uuid
+from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.db import connection, models
+from django.core.files.base import ContentFile
+from django.core.validators import MinValueValidator
+from django.db import connection, models, transaction
+from django.utils import timezone
+from PIL import Image, ImageOps
 
-from core.models import Company
+from core.models import Company, SoftDeleteModel
 
 INTERNAL_CODE_SEQUENCE = 'vehicle_internal_code_seq'
 
@@ -31,22 +38,7 @@ class VehicleStatus(models.TextChoices):
     SOLD = 'SOLD', 'Vendido'
 
 
-class VehicleQuerySet(models.QuerySet):
-    def alive(self):
-        return self.filter(deleted_at__isnull=True)
-
-    def deleted(self):
-        return self.filter(deleted_at__isnull=False)
-
-
-class VehicleManager(models.Manager):
-    """Exclui por padrão registros com soft delete (deleted_at preenchido)."""
-
-    def get_queryset(self):
-        return VehicleQuerySet(self.model, using=self._db).alive()
-
-
-class Vehicle(models.Model):
+class Vehicle(SoftDeleteModel):
     """Entidade central do sistema — um veículo em estoque de uma Company.
 
     Regras de validação a implementar na API (serializer), não aqui:
@@ -97,14 +89,8 @@ class Vehicle(models.Model):
 
     notes = models.TextField(null=True, blank=True)
 
-    deleted_at = models.DateTimeField(null=True, blank=True)
-    deletion_reason = models.TextField(null=True, blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    objects = VehicleManager()
-    all_objects = models.Manager()
 
     class Meta:
         verbose_name = 'Veículo'
@@ -128,3 +114,193 @@ class Vehicle(models.Model):
 
     def __str__(self):
         return self.internal_code or str(self.id)
+
+
+class ExpenseCategory(models.TextChoices):
+    ACQUISITION = 'ACQUISITION', 'Aquisição'
+    YARD_RELEASE = 'YARD_RELEASE', 'Pátio/Liberação'
+    TRANSPORT = 'TRANSPORT', 'Transporte'
+    DOCUMENTATION = 'DOCUMENTATION', 'Documentação'
+    MECHANICAL = 'MECHANICAL', 'Mecânica'
+    BODYWORK = 'BODYWORK', 'Funilaria'
+    PAINTING = 'PAINTING', 'Pintura'
+    DETAILING = 'DETAILING', 'Estética'
+    CLEANING = 'CLEANING', 'Higienização'
+    PARTS = 'PARTS', 'Peças'
+    ACCESSORIES = 'ACCESSORIES', 'Acessórios'
+    MARKETING = 'MARKETING', 'Marketing'
+    COMMISSION = 'COMMISSION', 'Comissão'
+    OTHER = 'OTHER', 'Outros'
+
+
+class VehicleExpense(SoftDeleteModel):
+    """Despesa associada a um veículo (1 Vehicle — N VehicleExpense)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.PROTECT, related_name='expenses')
+
+    date = models.DateField()
+    category = models.CharField(max_length=20, choices=ExpenseCategory.choices)
+    description = models.CharField(max_length=255)
+    supplier = models.CharField(max_length=150, null=True, blank=True)
+
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+
+    paid = models.BooleanField(default=False)
+    notes = models.TextField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Despesa do veículo'
+        verbose_name_plural = 'Despesas do veículo'
+
+    def save(self, *args, **kwargs):
+        # full_clean() aqui garante que amount > 0 vale para .save()/.create()
+        # direto, não só quando o chamador lembra de validar manualmente.
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.get_category_display()} - {self.vehicle}'
+
+
+class ValueChangeField(models.TextChoices):
+    ASKING_PRICE = 'asking_price', 'Preço anunciado'
+    SALE_PRICE = 'sale_price', 'Preço de venda'
+
+
+# Imutabilidade garantida apenas na camada de aplicação (save()/delete()
+# sobrescritos), sem constraint ou trigger de banco. Decisão aceita para a V1
+# dado uso single-user sem acesso SQL externo direto — revisar se o sistema
+# evoluir para multiusuário ou acesso de terceiros ao banco.
+class VehicleValueChangeLog(models.Model):
+    """Log append-only de mudanças em asking_price/sale_price. Nunca editável
+    nem excluível após criado — é o próprio mecanismo de auditoria, então
+    save()/delete() bloqueiam qualquer tentativa (inclusive via Admin, que
+    também está registrado como somente leitura)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vehicle = models.ForeignKey(
+        Vehicle, on_delete=models.PROTECT, related_name='value_change_logs'
+    )
+
+    field_name = models.CharField(max_length=20, choices=ValueChangeField.choices)
+    old_value = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    new_value = models.DecimalField(max_digits=14, decimal_places=2)
+    reason = models.TextField()
+
+    changed_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Log de alteração de valor'
+        verbose_name_plural = 'Logs de alteração de valor'
+        ordering = ['-changed_at']
+
+    def __str__(self):
+        return f'{self.vehicle} - {self.get_field_name_display()}: {self.old_value} -> {self.new_value}'
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError(
+                'VehicleValueChangeLog é um log append-only; não pode ser editado após criado.'
+            )
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('VehicleValueChangeLog é um log append-only; não pode ser excluído.')
+
+
+THUMBNAIL_SIZE = (400, 400)
+
+
+def vehicle_photo_upload_path(instance, filename):
+    return f'vehicles/{instance.vehicle_id}/photos/{filename}'
+
+
+def vehicle_photo_thumbnail_upload_path(instance, filename):
+    return f'vehicles/{instance.vehicle_id}/thumbnails/{filename}'
+
+
+class VehiclePhoto(models.Model):
+    """Foto de um veículo. No máximo uma is_cover=True por vehicle — garantido
+    por UniqueConstraint parcial (rede de segurança) e, no fluxo principal,
+    pela troca atômica em save()."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='photos')
+
+    image = models.ImageField(upload_to=vehicle_photo_upload_path)
+    thumbnail = models.ImageField(
+        upload_to=vehicle_photo_thumbnail_upload_path, blank=True, editable=False
+    )
+
+    position = models.PositiveIntegerField(default=0)
+    is_cover = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Foto do veículo'
+        verbose_name_plural = 'Fotos do veículo'
+        ordering = ['position', 'created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['vehicle'],
+                condition=models.Q(is_cover=True),
+                name='unique_cover_photo_per_vehicle',
+            ),
+        ]
+
+    def __str__(self):
+        return f'Foto {self.position} - {self.vehicle}'
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.image:
+            self._process_image()
+
+        if self.is_cover:
+            with transaction.atomic():
+                # UPDATE já toma lock de linha no Postgres; select_for_update()
+                # não se aplica aqui pois .update() não passa pelo iterador do
+                # queryset que respeitaria esse hint.
+                VehiclePhoto.objects.filter(vehicle_id=self.vehicle_id, is_cover=True).exclude(
+                    pk=self.pk
+                ).update(is_cover=False)
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
+
+    def _process_image(self):
+        """Remove EXIF (pode conter geolocalização) e gera thumbnail via Pillow.
+
+        A orientação é "assada" nos pixels via exif_transpose antes do EXIF
+        ser descartado, para a imagem não aparecer rotacionada depois.
+        """
+        self.image.open()
+        self.image.seek(0)
+        original = Image.open(self.image)
+        original.load()
+        original = ImageOps.exif_transpose(original)
+
+        image_format = (original.format or 'JPEG').upper()
+        if image_format == 'JPEG' and original.mode in ('RGBA', 'P'):
+            original = original.convert('RGB')
+
+        original_name = os.path.basename(self.image.name)
+
+        clean_buffer = io.BytesIO()
+        original.save(clean_buffer, format=image_format)
+        self.image = ContentFile(clean_buffer.getvalue(), name=original_name)
+
+        thumbnail_image = original.copy()
+        thumbnail_image.thumbnail(THUMBNAIL_SIZE)
+        thumb_buffer = io.BytesIO()
+        thumbnail_image.save(thumb_buffer, format=image_format)
+        self.thumbnail = ContentFile(thumb_buffer.getvalue(), name=f'thumb_{original_name}')
