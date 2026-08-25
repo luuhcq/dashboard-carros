@@ -183,6 +183,113 @@ class VehicleDetailSerializer(serializers.ModelSerializer):
         return _serialize_metrics(VehicleMetricsService.calculate(vehicle))
 
 
+class VehicleWriteSerializer(serializers.ModelSerializer):
+    """Serializer de escrita (create + PATCH parcial) — separado dos de
+    leitura (Prompt 14), que continuam somente-leitura de propósito.
+
+    asking_price/sale_price são bloqueados em TODA escrita por aqui — create
+    e PATCH, sem exceção. Não existe caminho de criação ou edição de Vehicle
+    que grave esses dois campos diretamente; a única forma de defini-los ou
+    alterá-los é pelos endpoints dedicados do Prompt 17 (ainda não
+    implementados), que vão gerar o VehicleValueChangeLog com justificativa
+    obrigatória — inclusive a primeira definição do valor precisa desse
+    registro de auditoria (com old_value=None), não só mudanças posteriores.
+
+    Decisão sobre requisição com campo proibido junto de campos válidos
+    (confirmada com o usuário): rejeita a REQUISIÇÃO INTEIRA — 400, nada é
+    persistido, nem os outros campos do mesmo payload. Um 400 que ainda
+    assim aplica parte do pedido seria uma combinação confusa pra quem
+    consome a API: a resposta diz que falhou, mas o servidor mudou estado
+    mesmo assim. Rejeição total mantém o significado usual de um 400 (nada
+    mudou) e é mais simples de testar.
+    """
+
+    NEVER_WRITABLE_FIELDS = {'asking_price', 'sale_price'}
+
+    class Meta:
+        model = Vehicle
+        fields = [
+            'id',
+            'internal_code',
+            'company',
+            'brand',
+            'model',
+            'version',
+            'manufacture_year',
+            'model_year',
+            'mileage',
+            'plate',
+            'chassis',
+            'color',
+            'status',
+            'source',
+            'supplier_name',
+            'purchase_date',
+            'purchase_price',
+            'fipe_reference_value',
+            'fipe_code',
+            'asking_price',
+            'sale_date',
+            'sale_price',
+            'notes',
+            'deleted_at',
+            'deletion_reason',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'internal_code',
+            'deleted_at',
+            'deletion_reason',
+            'created_at',
+            'updated_at',
+        ]
+
+    def validate(self, attrs):
+        blocked_present = self.NEVER_WRITABLE_FIELDS & set(attrs.keys())
+        if blocked_present:
+            raise serializers.ValidationError({
+                field_name: (
+                    'Não é possível gravar este campo por aqui, nem na criação nem '
+                    'na edição. A definição/alteração de asking_price/sale_price '
+                    'precisa passar pelos endpoints dedicados (Prompt 17), que '
+                    'registram o motivo da mudança.'
+                )
+                for field_name in sorted(blocked_present)
+            })
+
+        instance = self.instance
+
+        def resolve(field_name):
+            if field_name in attrs:
+                return attrs[field_name]
+            return getattr(instance, field_name) if instance is not None else None
+
+        # sale_date continua gravável por aqui (só asking_price/sale_price são
+        # bloqueados), então a validação cruzada com purchase_date permanece.
+        purchase_date = resolve('purchase_date')
+        sale_date = resolve('sale_date')
+        if sale_date is not None and purchase_date is not None and sale_date < purchase_date:
+            raise serializers.ValidationError(
+                {'sale_date': 'sale_date não pode ser anterior a purchase_date.'}
+            )
+
+        # sale_price > 0 e asking_price >= 0 não têm mais checagem aqui: como
+        # os dois são sempre bloqueados acima antes de chegar neste ponto,
+        # qualquer verificação de valor para eles seria código morto,
+        # inalcançável. purchase_price/fipe_reference_value continuam
+        # graváveis normalmente, então mantêm a checagem de não-negativo.
+        for field_name in ('purchase_price', 'fipe_reference_value'):
+            value = resolve(field_name)
+            if value is not None and value < 0:
+                raise serializers.ValidationError(
+                    {field_name: f'{field_name} não pode ser negativo.'}
+                )
+
+        return attrs
+
+
 class VehicleExpenseSerializer(serializers.ModelSerializer):
     """Leitura e escrita. deleted_at/deletion_reason ficam visíveis na
     saída (útil pra investigação — mesmo raciocínio do Admin no Prompt 11),
