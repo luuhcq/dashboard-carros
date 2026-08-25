@@ -5,11 +5,20 @@ from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Vehicle, VehicleExpense, VehicleStatus, VehicleValueChangeLog, ValueChangeField
+from .models import (
+    Vehicle,
+    VehicleExpense,
+    VehiclePhoto,
+    VehicleStatus,
+    VehicleValueChangeLog,
+    ValueChangeField,
+)
 from .serializers import (
     VehicleDetailSerializer,
     VehicleExpenseSerializer,
     VehicleListSerializer,
+    VehiclePhotoSerializer,
+    VehiclePhotoUpdateSerializer,
     VehiclePriceUpdateSerializer,
     VehicleSaleSerializer,
     VehicleValueChangeLogSerializer,
@@ -178,3 +187,43 @@ class VehicleExpenseDetailView(generics.RetrieveUpdateDestroyAPIView):
         if error_response is not None:
             return error_response
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class VehiclePhotoListCreateView(generics.ListCreateAPIView):
+    """GET/POST /api/vehicles/{vehicle_id}/photos/ — aninhado, mesmo padrão
+    de VehicleExpenseListCreateView (Prompt 16): vehicle nunca vem do
+    corpo, sempre da URL. Ordenação por position já vem do Meta.ordering
+    de VehiclePhoto — não precisa de order_by aqui."""
+
+    serializer_class = VehiclePhotoSerializer
+
+    def get_vehicle(self):
+        return get_object_or_404(Vehicle.objects.all(), pk=self.kwargs['vehicle_id'])
+
+    def get_queryset(self):
+        vehicle = self.get_vehicle()
+        return VehiclePhoto.objects.filter(vehicle=vehicle)
+
+    def perform_create(self, serializer):
+        vehicle = self.get_vehicle()
+        serializer.save(vehicle=vehicle)
+
+
+class VehiclePhotoDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """PATCH/DELETE /api/photos/{id}/ — rota independente (não aninhada).
+
+    PATCH usa VehiclePhotoUpdateSerializer (só position/is_cover) — a troca
+    de capa reusa a lógica atômica já em VehiclePhoto.save() (Prompt 10),
+    nada duplicado aqui.
+
+    DELETE: nenhum destroy() customizado — o mixin padrão do DRF já chama
+    instance.delete(), e VehiclePhoto.delete() (Prompt 18) já cuida de
+    remover os arquivos físicos do storage. Diferente de Vehicle/
+    VehicleExpense, não há soft delete nem deletion_reason aqui (decisão
+    documentada no model: fotos não têm valor de auditoria como preço/venda
+    têm)."""
+
+    queryset = VehiclePhoto.objects.all()
+    serializer_class = VehiclePhotoUpdateSerializer
+    lookup_url_kwarg = 'photo_id'
+    http_method_names = ['get', 'patch', 'delete', 'head', 'options']

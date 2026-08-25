@@ -373,6 +373,12 @@ class VehiclePhotoSerializerTests(TestCase):
         serializer = VehiclePhotoSerializer()
         self.assertTrue(serializer.fields['thumbnail'].read_only)
 
+    def test_vehicle_is_read_only(self):
+        """Prompt 18: vehicle nunca vem do corpo, sempre da URL — mesmo
+        padrão de VehicleExpenseSerializer (Prompt 16)."""
+        serializer = VehiclePhotoSerializer()
+        self.assertTrue(serializer.fields['vehicle'].read_only)
+
     def test_creating_photo_ignores_thumbnail_in_payload_and_generates_its_own(self):
         data = {
             'vehicle': str(self.vehicle.id),
@@ -384,10 +390,13 @@ class VehiclePhotoSerializerTests(TestCase):
         serializer = VehiclePhotoSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
-        photo = serializer.save()
+        # vehicle é read_only (Prompt 18): precisa ser fornecido via save(),
+        # igual a view aninhada real vai fazer com o vehicle_id da URL.
+        photo = serializer.save(vehicle=self.vehicle)
 
         self.assertTrue(photo.thumbnail.name)
         self.assertNotIn('fake_thumb', photo.thumbnail.name)
+        self.assertEqual(photo.vehicle, self.vehicle)
 
     def test_read_output_includes_thumbnail_url(self):
         photo = VehiclePhoto.objects.create(

@@ -231,7 +231,22 @@ def vehicle_photo_thumbnail_upload_path(instance, filename):
 class VehiclePhoto(models.Model):
     """Foto de um veículo. No máximo uma is_cover=True por vehicle — garantido
     por UniqueConstraint parcial (rede de segurança) e, no fluxo principal,
-    pela troca atômica em save()."""
+    pela troca atômica em save().
+
+    Sem soft delete de propósito (decisão do Prompt 18, não uma lacuna
+    esquecida do Prompt 10): diferente de preço/venda, não há motivo de
+    auditoria pra manter o histórico de fotos removidas — é mídia, não um
+    valor financeiro sensível. DELETE remove o registro E os arquivos físicos
+    (image + thumbnail) do storage — ver delete() abaixo —, pra não acumular
+    lixo órfão indefinidamente no S3/filesystem local.
+
+    Limitação conhecida: essa limpeza só roda quando delete() é chamado numa
+    instância específica. Um hard delete em cascata de Vehicle (on_delete=
+    CASCADE aqui) usa DELETE em lote no banco e não instancia cada
+    VehiclePhoto, então não passaria por este delete() — os arquivos
+    ficariam órfãos nesse cenário. Na prática isso não deveria acontecer:
+    Vehicle usa soft delete como fluxo normal, hard delete de Vehicle não é
+    exposto por nenhum endpoint."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='photos')
@@ -260,6 +275,21 @@ class VehiclePhoto(models.Model):
 
     def __str__(self):
         return f'Foto {self.position} - {self.vehicle}'
+
+    def delete(self, *args, **kwargs):
+        image_file = self.image
+        thumbnail_file = self.thumbnail
+
+        result = super().delete(*args, **kwargs)
+
+        # depois do registro sumir do banco, remove os arquivos do storage
+        # (save=False: não há mais linha no banco pra atualizar)
+        if image_file:
+            image_file.delete(save=False)
+        if thumbnail_file:
+            thumbnail_file.delete(save=False)
+
+        return result
 
     def save(self, *args, **kwargs):
         if self._state.adding and self.image:

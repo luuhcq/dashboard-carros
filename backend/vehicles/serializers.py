@@ -339,6 +339,19 @@ class VehicleExpenseSerializer(serializers.ModelSerializer):
     serializer.save(vehicle=...), o jeito sancionado do DRF pra campo
     determinado pelo contexto da requisição em vez do payload do cliente —
     isso funciona mesmo com o campo marcado read_only aqui.
+
+    Por que read_only (ignora silenciosamente) em vez de rejeitar com 400
+    como asking_price/sale_price (Prompt 15)? São categorias diferentes:
+    vehicle é um campo de ROTEAMENTO — em qualquer variação deste endpoint,
+    ele sempre vem da URL, nunca do corpo; nenhum cliente razoável esperaria
+    que reenviar o vehicle já presente na URL/no GET fizesse diferença.
+    asking_price/sale_price são campos normalmente GRAVÁVEIS em outro
+    caminho (endpoints do Prompt 17) e só ficam bloqueados aqui por regra de
+    negócio — por isso merecem erro alto, senão o cliente pode achar que o
+    preço mudou quando na verdade não mudou. Mesmo raciocínio aplicado a
+    VehiclePhotoSerializer/VehiclePhotoUpdateSerializer (Prompt 18): lá,
+    vehicle também é só ignorado, mas image (que É gravável no POST de
+    criação) é rejeitado explicitamente quando presente no PATCH.
     """
 
     class Meta:
@@ -447,9 +460,66 @@ class VehicleValueChangeLogSerializer(serializers.ModelSerializer):
 
 class VehiclePhotoSerializer(serializers.ModelSerializer):
     """Leitura e escrita. thumbnail é gerado automaticamente no save() do
-    model (Prompt 10) — nunca aceito como entrada."""
+    model (Prompt 10) — nunca aceito como entrada.
+
+    vehicle também é somente leitura (mesmo padrão do Prompt 16 pra
+    VehicleExpense): nunca vem do corpo, sempre da URL — injetado
+    explicitamente via serializer.save(vehicle=...) na view de criação
+    aninhada. PATCH (troca de capa/reordenação) não deveria poder mover uma
+    foto pra outro veículo por engano de payload, então fica bloqueado
+    também na edição.
+
+    vehicle fica em read_only (ignorado silenciosamente), não numa rejeição
+    de 400 — é um campo de ROTEAMENTO, sempre vindo da URL em qualquer
+    variação deste endpoint, nunca um valor que o cliente teria motivo pra
+    achar que está gravando. Comparar com VehiclePhotoUpdateSerializer.image
+    abaixo: image É gravável no POST de criação, só fica bloqueado no PATCH
+    por regra de negócio — por isso esse sim é rejeitado explicitamente,
+    mesmo padrão de asking_price/sale_price (Prompt 15)."""
 
     class Meta:
         model = VehiclePhoto
         fields = ['id', 'vehicle', 'image', 'thumbnail', 'position', 'is_cover', 'created_at']
-        read_only_fields = ['id', 'thumbnail', 'created_at']
+        read_only_fields = ['id', 'vehicle', 'thumbnail', 'created_at']
+
+
+class VehiclePhotoUpdateSerializer(VehiclePhotoSerializer):
+    """PATCH /api/photos/{id}/ (Prompt 18) — só aceita position e/ou
+    is_cover de fato; vehicle continua read_only (herdado da classe base,
+    ver justificativa lá) e image é rejeitado explicitamente — ver
+    validate() abaixo.
+
+    image não é editável por aqui: _process_image() (remoção de EXIF +
+    geração de thumbnail, Prompt 10) só roda no save() de CRIAÇÃO
+    (self._state.adding é True só nesse momento) — trocar a imagem via
+    PATCH deixaria o thumbnail e o EXIF dessincronizados do arquivo novo,
+    sem ninguém percebendo. Reenviar uma foto é um POST novo (cria outro
+    registro), não uma edição do existente.
+
+    Diferente de vehicle (campo de roteamento, sempre ignorado
+    silenciosamente — ver VehiclePhotoSerializer acima), image É um campo
+    normalmente gravável (no POST de criação) só bloqueado NESTE caminho
+    por integridade de dados — a mesma categoria de asking_price/sale_price
+    no VehicleWriteSerializer (Prompt 15). Por isso, ao contrário de
+    vehicle, image presente no payload de PATCH é rejeitado com 400
+    explícito, não silenciosamente ignorado: um cliente pode legitimamente
+    achar que enviar image troca a foto, e uma falha silenciosa deixaria
+    essa expectativa quebrada sem aviso."""
+
+    NEVER_WRITABLE_ON_PATCH = {'image'}
+
+    class Meta(VehiclePhotoSerializer.Meta):
+        pass
+
+    def validate(self, attrs):
+        blocked_present = self.NEVER_WRITABLE_ON_PATCH & set(attrs.keys())
+        if blocked_present:
+            raise serializers.ValidationError({
+                field_name: (
+                    'Não é possível trocar a imagem por aqui. Envie uma nova '
+                    'foto via POST /api/vehicles/{vehicle_id}/photos/ em vez '
+                    'de editar esta.'
+                )
+                for field_name in sorted(blocked_present)
+            })
+        return attrs
