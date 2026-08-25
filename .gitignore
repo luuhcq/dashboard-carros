@@ -12,6 +12,7 @@ dist/
 
 # Mídia e banco de dados
 media/
+staticfiles/
 db.sqlite3
 
 # IDE
