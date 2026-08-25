@@ -293,8 +293,17 @@ class VehicleWriteSerializer(serializers.ModelSerializer):
 class VehicleExpenseSerializer(serializers.ModelSerializer):
     """Leitura e escrita. deleted_at/deletion_reason ficam visíveis na
     saída (útil pra investigação — mesmo raciocínio do Admin no Prompt 11),
-    mas nunca graváveis por aqui: soft delete tem seu próprio fluxo (fora do
-    escopo deste prompt), nunca um PATCH direto nesses campos."""
+    mas nunca graváveis por aqui: soft delete tem seu próprio fluxo, nunca
+    um PATCH direto nesses campos.
+
+    vehicle também é somente leitura (Prompt 16): nunca vem do corpo da
+    requisição, nem na criação nem na edição — sempre vem da URL
+    (/api/vehicles/{vehicle_id}/expenses/ na criação; a despesa já sabe seu
+    vehicle na edição). A view de criação aninhada injeta o valor via
+    serializer.save(vehicle=...), o jeito sancionado do DRF pra campo
+    determinado pelo contexto da requisição em vez do payload do cliente —
+    isso funciona mesmo com o campo marcado read_only aqui.
+    """
 
     class Meta:
         model = VehicleExpense
@@ -313,7 +322,14 @@ class VehicleExpenseSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'deleted_at', 'deletion_reason', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id',
+            'vehicle',
+            'deleted_at',
+            'deletion_reason',
+            'created_at',
+            'updated_at',
+        ]
 
 
 class VehicleValueChangeLogSerializer(serializers.ModelSerializer):

@@ -242,6 +242,13 @@ class VehicleExpenseSerializerWriteTests(TestCase):
         self.assertTrue(serializer.fields['deleted_at'].read_only)
         self.assertTrue(serializer.fields['deletion_reason'].read_only)
 
+    def test_vehicle_is_read_only(self):
+        """Prompt 16: vehicle nunca vem do corpo, sempre da URL — a view
+        aninhada injeta o valor via serializer.save(vehicle=...)."""
+        serializer = VehicleExpenseSerializer()
+        self.assertIn('vehicle', serializer.fields)
+        self.assertTrue(serializer.fields['vehicle'].read_only)
+
     def test_creating_expense_with_deleted_at_in_payload_is_ignored(self):
         data = {
             'vehicle': str(self.vehicle.id),
@@ -255,10 +262,14 @@ class VehicleExpenseSerializerWriteTests(TestCase):
         serializer = VehicleExpenseSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
-        expense = serializer.save()
+        # vehicle é read_only (Prompt 16): o valor no payload é ignorado, o
+        # chamador precisa fornecer explicitamente via save(), igual a view
+        # aninhada real vai fazer com o vehicle_id da URL.
+        expense = serializer.save(vehicle=self.vehicle)
 
         self.assertIsNone(expense.deleted_at)
         self.assertIsNone(expense.deletion_reason)
+        self.assertEqual(expense.vehicle, self.vehicle)
 
     def test_amount_validator_from_model_is_enforced_by_serializer(self):
         data = {
