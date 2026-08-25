@@ -4,10 +4,12 @@ import threading
 from datetime import date
 from decimal import Decimal
 
+from django.contrib import admin
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, connection, transaction
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from PIL import Image
 
@@ -398,3 +400,112 @@ class VehiclePhotoTests(TestCase):
         thumb_image = Image.open(photo.thumbnail)
         self.assertLessEqual(thumb_image.width, 400)
         self.assertLessEqual(thumb_image.height, 400)
+
+
+class AdminSoftDeleteVisibilityTests(TestCase):
+    """Confirma explicitamente que o Admin mostra registros soft-deletados de
+    Vehicle e VehicleExpense (decisão consciente do PROMPT 11: o Admin troca
+    para all_objects via SoftDeleteAdminMixin.get_queryset), com uma coluna
+    deixando claro quais estão deletados — não é o manager `objects` (que
+    exclui deletados) vazando sem ninguém ter decidido."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.admin_user = User.objects.create_superuser(
+            username='admin', password='AdminPass!23', email='admin@example.com'
+        )
+        self.client.force_login(self.admin_user)
+
+        self.company = Company.objects.create(name='Empresa admin')
+        self.deleted_vehicle = make_vehicle(self.company, brand='Deletado', model='X')
+        self.deleted_vehicle.deleted_at = timezone.now()
+        self.deleted_vehicle.deletion_reason = 'teste admin'
+        self.deleted_vehicle.save()
+
+        self.active_vehicle = make_vehicle(self.company, brand='Ativo', model='Y')
+
+        self.deleted_expense = make_expense(self.active_vehicle, description='Despesa deletada')
+        self.deleted_expense.deleted_at = timezone.now()
+        self.deleted_expense.save()
+
+        self.active_expense = make_expense(self.active_vehicle, description='Despesa ativa')
+
+    def test_vehicle_admin_changelist_shows_soft_deleted_vehicle(self):
+        response = self.client.get('/admin/vehicles/vehicle/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.deleted_vehicle.internal_code)
+        self.assertContains(response, self.active_vehicle.internal_code)
+        # a coluna de status precisa indicar visualmente qual está deletado
+        self.assertContains(response, 'Deletado')
+        self.assertContains(response, 'Ativo')
+
+    def test_vehicle_admin_queryset_uses_all_objects_not_default_manager(self):
+        model_admin = admin.site._registry[Vehicle]
+        request = RequestFactory().get('/admin/vehicles/vehicle/')
+        request.user = self.admin_user
+
+        qs = model_admin.get_queryset(request)
+
+        self.assertIn(self.deleted_vehicle, qs)
+        self.assertIn(self.active_vehicle, qs)
+        # e confirma que isso realmente diverge do manager default (objects),
+        # que é quem já exclui soft-deletados — provando que a escolha foi
+        # deliberada, não um acidente de os dois coincidirem
+        self.assertNotIn(self.deleted_vehicle, Vehicle.objects.all())
+
+    def test_vehicle_expense_admin_changelist_shows_soft_deleted_expense(self):
+        response = self.client.get('/admin/vehicles/vehicleexpense/')
+
+        self.assertEqual(response.status_code, 200)
+        # description não está no list_display (só vehicle/category/amount/
+        # date/paid, como pedido), então a identificação da linha é pelo pk
+        self.assertContains(response, str(self.deleted_expense.pk))
+        self.assertContains(response, str(self.active_expense.pk))
+        self.assertContains(response, 'Deletado')
+        self.assertContains(response, 'Ativo')
+
+    def test_vehicle_expense_admin_queryset_uses_all_objects_not_default_manager(self):
+        model_admin = admin.site._registry[VehicleExpense]
+        request = RequestFactory().get('/admin/vehicles/vehicleexpense/')
+        request.user = self.admin_user
+
+        qs = model_admin.get_queryset(request)
+
+        self.assertIn(self.deleted_expense, qs)
+        self.assertNotIn(self.deleted_expense, VehicleExpense.objects.all())
+
+
+class VehiclePhotoAdminTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._media_root_dir = tempfile.TemporaryDirectory()
+        cls._media_root_override = override_settings(MEDIA_ROOT=cls._media_root_dir.name)
+        cls._media_root_override.enable()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._media_root_override.disable()
+        cls._media_root_dir.cleanup()
+        super().tearDownClass()
+
+    def setUp(self):
+        User = get_user_model()
+        self.admin_user = User.objects.create_superuser(
+            username='admin_photo', password='AdminPass!23', email='admin2@example.com'
+        )
+        self.client.force_login(self.admin_user)
+
+        self.company = Company.objects.create(name='Empresa admin foto')
+        self.vehicle = make_vehicle(self.company)
+        self.photo = VehiclePhoto.objects.create(
+            vehicle=self.vehicle, image=make_uploaded_image('a.jpg'), is_cover=True
+        )
+
+    def test_vehicle_photo_admin_changelist_renders_thumbnail_preview(self):
+        response = self.client.get('/admin/vehicles/vehiclephoto/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<img src=')
+        self.assertContains(response, self.photo.thumbnail.url)
