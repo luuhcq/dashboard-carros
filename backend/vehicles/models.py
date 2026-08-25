@@ -1,8 +1,25 @@
 import uuid
 
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import connection, models
 
 from core.models import Company
+
+INTERNAL_CODE_SEQUENCE = 'vehicle_internal_code_seq'
+
+
+def next_internal_code():
+    """Consulta a sequence nativa do Postgres (nextval) e formata como CAR-XXXXXX.
+
+    nextval() é atômico no nível do banco — duas transações concorrentes nunca
+    recebem o mesmo valor, mesmo sem lock explícito na aplicação. Por isso não
+    há necessidade de transaction.atomic()/select_for_update() aqui: a garantia
+    de unicidade vem do próprio Postgres, não de lógica Python.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT nextval(%s)", [INTERNAL_CODE_SEQUENCE])
+        value = cursor.fetchone()[0]
+    return f'CAR-{value:06d}'
 
 
 class VehicleStatus(models.TextChoices):
@@ -42,9 +59,8 @@ class Vehicle(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Gerado via sequence na etapa 07; aqui só o campo. Único quando preenchido,
-    # e imutável por convenção de aplicação (não há enforcement de imutabilidade
-    # no banco).
+    # Gerado automaticamente no save() a partir da sequence do Postgres (ver
+    # next_internal_code). Imutável após a criação — ver save() abaixo.
     internal_code = models.CharField(max_length=50, unique=True, null=True, blank=True)
 
     company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='vehicles')
@@ -93,6 +109,22 @@ class Vehicle(models.Model):
     class Meta:
         verbose_name = 'Veículo'
         verbose_name_plural = 'Veículos'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_internal_code = self.internal_code
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            if not self.internal_code:
+                self.internal_code = next_internal_code()
+        elif self._original_internal_code and self.internal_code != self._original_internal_code:
+            raise ValidationError(
+                {'internal_code': 'internal_code é imutável e não pode ser alterado após a criação.'}
+            )
+
+        super().save(*args, **kwargs)
+        self._original_internal_code = self.internal_code
 
     def __str__(self):
         return self.internal_code or str(self.id)
