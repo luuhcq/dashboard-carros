@@ -1,13 +1,18 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Vehicle, VehicleExpense
+from .models import Vehicle, VehicleExpense, VehicleStatus, VehicleValueChangeLog, ValueChangeField
 from .serializers import (
     VehicleDetailSerializer,
     VehicleExpenseSerializer,
     VehicleListSerializer,
+    VehiclePriceUpdateSerializer,
+    VehicleSaleSerializer,
+    VehicleValueChangeLogSerializer,
     VehicleWriteSerializer,
 )
 
@@ -62,6 +67,73 @@ class VehicleViewSet(viewsets.ModelViewSet):
         if error_response is not None:
             return error_response
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='price')
+    def price(self, request, pk=None):
+        """POST /api/vehicles/{id}/price/ — único caminho autorizado pra
+        definir/alterar asking_price (Prompt 15 bloqueia em qualquer outro
+        lugar). Atualiza Vehicle.asking_price diretamente — não usa
+        VehicleWriteSerializer, que rejeitaria esse campo de propósito."""
+        vehicle = self.get_object()
+        serializer = VehiclePriceUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        new_price = serializer.validated_data['new_price']
+        reason = serializer.validated_data['reason']
+
+        with transaction.atomic():
+            VehicleValueChangeLog.objects.create(
+                vehicle=vehicle,
+                field_name=ValueChangeField.ASKING_PRICE,
+                old_value=vehicle.asking_price,
+                new_value=new_price,
+                reason=reason,
+            )
+            vehicle.asking_price = new_price
+            vehicle.save()
+
+        return Response(VehicleDetailSerializer(vehicle).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='sale')
+    def sale(self, request, pk=None):
+        """POST /api/vehicles/{id}/sale/ — único caminho autorizado pra
+        definir/corrigir sale_price e transicionar status para SOLD. Reusar
+        esta mesma ação num veículo já SOLD é o fluxo de correção de venda:
+        nenhuma lógica especial pra isso — old_value só reflete o
+        sale_price atual (que pode já não ser None), e um novo log é
+        sempre criado, nunca editando o anterior."""
+        vehicle = self.get_object()
+        serializer = VehicleSaleSerializer(data=request.data, context={'vehicle': vehicle})
+        serializer.is_valid(raise_exception=True)
+
+        sale_price = serializer.validated_data['sale_price']
+        sale_date = serializer.validated_data['sale_date']
+        reason = serializer.validated_data['reason']
+
+        with transaction.atomic():
+            VehicleValueChangeLog.objects.create(
+                vehicle=vehicle,
+                field_name=ValueChangeField.SALE_PRICE,
+                old_value=vehicle.sale_price,
+                new_value=sale_price,
+                reason=reason,
+            )
+            vehicle.sale_price = sale_price
+            vehicle.sale_date = sale_date
+            vehicle.status = VehicleStatus.SOLD
+            vehicle.save()
+
+        return Response(VehicleDetailSerializer(vehicle).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='value-changes')
+    def value_changes(self, request, pk=None):
+        """GET /api/vehicles/{id}/value-changes/ — histórico completo
+        (asking_price e sale_price juntos), mais recente primeiro (ordering
+        já definido em VehicleValueChangeLog.Meta)."""
+        vehicle = self.get_object()
+        logs = VehicleValueChangeLog.objects.filter(vehicle=vehicle)
+        serializer = VehicleValueChangeLogSerializer(logs, many=True)
+        return Response(serializer.data)
 
 
 class VehicleExpenseListCreateView(generics.ListCreateAPIView):

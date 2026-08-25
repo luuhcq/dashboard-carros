@@ -259,7 +259,43 @@ class VehicleWriteSerializer(serializers.ModelSerializer):
                 for field_name in sorted(blocked_present)
             })
 
+        # status=SOLD só pode acontecer via POST /api/vehicles/{id}/sale/
+        # (Prompt 17) — esse é o único caminho que cria o
+        # VehicleValueChangeLog e garante sale_price/sale_date consistentes.
+        # Sem essa checagem, um PATCH {"status": "SOLD"} produziria um
+        # veículo "vendido" sem preço de venda e sem log nenhum.
+        if attrs.get('status') == VehicleStatus.SOLD:
+            raise serializers.ValidationError({
+                'status': (
+                    'Não é possível definir status=SOLD por aqui. Use '
+                    'POST /api/vehicles/{id}/sale/, que também registra o '
+                    'preço de venda e o motivo.'
+                )
+            })
+
         instance = self.instance
+
+        # Simetria da regra acima: uma vez SOLD, sair desse status por aqui
+        # também é bloqueado. Sem isso, PATCH {"status": "LISTED"} num
+        # veículo já vendido passava despercebido — sale_price/sale_date
+        # ficavam presos no banco sem log nenhum sobre a reversão, e o
+        # veículo parecia "não vendido" pro status mas continuava com dados
+        # de venda íntegros. Reverter um SOLD é uma decisão de negócio que
+        # precisa dizer o que fazer com esses dados — não está implementada
+        # ainda, então o caminho fica fechado por enquanto.
+        if (
+            instance is not None
+            and instance.status == VehicleStatus.SOLD
+            and 'status' in attrs
+            and attrs['status'] != VehicleStatus.SOLD
+        ):
+            raise serializers.ValidationError({
+                'status': (
+                    'Não é possível sair de status=SOLD por aqui. Reverter uma '
+                    'venda exige decidir o que fazer com sale_price/sale_date/'
+                    'histórico — esse fluxo ainda não existe.'
+                )
+            })
 
         def resolve(field_name):
             if field_name in attrs:
@@ -330,6 +366,43 @@ class VehicleExpenseSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+
+class VehiclePriceUpdateSerializer(serializers.Serializer):
+    """Input de POST /api/vehicles/{id}/price/ (Prompt 17) — não é
+    ModelSerializer de Vehicle de propósito: new_price/reason são a entrada
+    da ação, não um mapeamento 1:1 de campos graváveis do model. A view é
+    quem decide o que fazer com esses dados (criar o log, atualizar
+    asking_price) — não reusa VehicleWriteSerializer, que rejeitaria
+    justamente o campo que este endpoint existe pra escrever."""
+
+    new_price = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal('0'))
+    reason = serializers.CharField(allow_blank=False)
+
+
+class VehicleSaleSerializer(serializers.Serializer):
+    """Input de POST /api/vehicles/{id}/sale/ (Prompt 17) — mesma lógica do
+    VehiclePriceUpdateSerializer acima: serializer de ação, não de Vehicle.
+
+    Precisa do vehicle no context (`context={'vehicle': vehicle}`) pra
+    validar sale_date >= purchase_date."""
+
+    sale_price = serializers.DecimalField(max_digits=14, decimal_places=2)
+    sale_date = serializers.DateField()
+    reason = serializers.CharField(allow_blank=False)
+
+    def validate_sale_price(self, value):
+        if value <= 0:
+            raise serializers.ValidationError('sale_price deve ser maior que zero.')
+        return value
+
+    def validate(self, attrs):
+        vehicle = self.context['vehicle']
+        if attrs['sale_date'] < vehicle.purchase_date:
+            raise serializers.ValidationError(
+                {'sale_date': 'sale_date não pode ser anterior a purchase_date.'}
+            )
+        return attrs
 
 
 class VehicleValueChangeLogSerializer(serializers.ModelSerializer):
