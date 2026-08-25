@@ -3,6 +3,7 @@ Configurações compartilhadas por todos os ambientes.
 Nada de segredo ou valor específico de ambiente aqui — tudo vem do .env.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -34,10 +35,15 @@ INSTALLED_APPS = [
 
     # Third-party
     'rest_framework',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_filters',
     'drf_spectacular',
     'storages',
+
+    # Local
+    'authentication',
 ]
 
 MIDDLEWARE = [
@@ -171,6 +177,12 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
     ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'authentication.authentication.CookieJWTAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
 }
 
 SPECTACULAR_SETTINGS = {
@@ -179,6 +191,24 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
 }
+
+
+# JWT (djangorestframework-simplejwt)
+# Tokens trafegam só via cookie httpOnly, nunca no corpo da resposta JSON.
+# JWT_AUTH_COOKIE_SECURE é definido explicitamente em cada settings de ambiente
+# (dev.py / prod.py), nunca aqui — mesmo motivo do DEBUG/ALLOWED_HOSTS.
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+}
+
+JWT_AUTH_COOKIE = 'access_token'
+JWT_AUTH_REFRESH_COOKIE = 'refresh_token'
+JWT_AUTH_COOKIE_SAMESITE = 'Lax'
 
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
