@@ -149,14 +149,14 @@ class VehicleListSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_aging_bucket(self, vehicle):
-        if hasattr(vehicle, 'aging'):
-            return _compute_aging_bucket(vehicle.aging)
+        if hasattr(vehicle, 'days_in_stock'):
+            return _compute_aging_bucket(vehicle.days_in_stock)
         return self._metrics(vehicle).aging_bucket
 
     @extend_schema_field(OpenApiTypes.INT)
     def get_days_in_stock(self, vehicle):
-        if hasattr(vehicle, 'aging'):
-            return vehicle.aging
+        if hasattr(vehicle, 'days_in_stock'):
+            return vehicle.days_in_stock
         return self._metrics(vehicle).days_in_stock
 
 
