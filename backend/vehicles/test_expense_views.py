@@ -89,6 +89,14 @@ class ExpenseUnauthenticatedAccessTests(APITestCase):
         response = self.client.delete(url, {'deletion_reason': 'x'}, format='json')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_retrieve_requires_authentication(self):
+        """expense-detail também aceita GET (RetrieveUpdateDestroyAPIView) —
+        só PATCH/DELETE tinham teste de 401 (Prompt 21: revisão de cobertura
+        encontrou essa lacuna)."""
+        url = reverse('expense-detail', kwargs={'expense_id': self.expense.pk})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
 
 class ExpenseCreateTests(AuthenticatedAPITestCase):
     def _valid_payload(self, **overrides):

@@ -100,6 +100,14 @@ class UnauthenticatedAccessTests(APITestCase):
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_retrieve_requires_authentication(self):
+        """photo-detail também aceita GET (RetrieveUpdateDestroyAPIView) —
+        só PATCH/DELETE tinham teste de 401 (Prompt 21: revisão de cobertura
+        encontrou essa lacuna)."""
+        url = reverse('photo-detail', kwargs={'photo_id': uuid.uuid4()})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
 
 class PhotoUploadTests(PhotoAPITestCase):
     def test_upload_links_photo_to_vehicle_from_url(self):

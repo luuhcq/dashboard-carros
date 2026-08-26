@@ -84,3 +84,27 @@ class AuthenticationTests(APITestCase):
         new_access = refresh_response.cookies[settings.JWT_AUTH_COOKIE].value
         self.assertTrue(new_access)
         self.assertNotEqual(old_access, new_access)
+
+    def test_refresh_with_malformed_token_returns_401(self):
+        """Diferente de token AUSENTE (já coberto acima) ou BLACKLISTED
+        (test_logout_clears_cookies...): aqui o cookie está presente mas é
+        lixo (nunca foi um JWT válido) — ramo TokenError de RefreshView
+        nunca tinha sido exercitado (achado pela cobertura no Prompt 21)."""
+        self.client.cookies[settings.JWT_AUTH_REFRESH_COOKIE] = 'isto-nao-e-um-jwt-valido'
+
+        response = self.client.post(self.refresh_url)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn('inválido', response.data['detail'])
+
+    def test_logout_with_malformed_token_still_succeeds(self):
+        """LogoutView engole TokenError de propósito (best-effort blacklist,
+        ver comentário no view) — logout não deve falhar só porque o cookie
+        estava corrompido. Ramo nunca exercitado antes (Prompt 21)."""
+        self.client.cookies[settings.JWT_AUTH_REFRESH_COOKIE] = 'isto-nao-e-um-jwt-valido'
+
+        response = self.client.post(self.logout_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.cookies[settings.JWT_AUTH_COOKIE].value, '')
+        self.assertEqual(response.cookies[settings.JWT_AUTH_REFRESH_COOKIE].value, '')
