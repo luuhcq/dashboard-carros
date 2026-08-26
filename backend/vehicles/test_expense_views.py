@@ -3,6 +3,8 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -330,3 +332,31 @@ class ExpenseAffectsVehicleTotalCostEndToEndTests(AuthenticatedAPITestCase):
 
         after_delete = self.client.get(self.vehicle_detail_url(self.vehicle))
         self.assertEqual(after_delete.data['metrics']['total_cost'], '50000.00')
+
+
+class ExpenseListNPlus1Tests(AuthenticatedAPITestCase):
+    """Prompt 23 — checkpoint arquitetural: confirma que a listagem de
+    despesas de um veículo não escala em número de queries com o número de
+    linhas (vehicle é serializado como PK via a otimização padrão do DRF
+    pra RelatedField, sem select_related/prefetch_related sendo necessário
+    aqui — mesmo raciocínio de VehicleListSerializer, mas nunca fixado num
+    teste próprio pra este endpoint até agora)."""
+
+    def test_query_count_does_not_scale_with_expense_count(self):
+        for i in range(3):
+            make_expense(self.vehicle, description=f'Despesa {i}')
+        with CaptureQueriesContext(connection) as small_capture:
+            small_response = self.client.get(self.expense_list_url())
+        self.assertEqual(small_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(small_response.data), 3)
+
+        for i in range(7):
+            make_expense(self.vehicle, description=f'Despesa extra {i}')
+        with CaptureQueriesContext(connection) as large_capture:
+            large_response = self.client.get(self.expense_list_url())
+        self.assertEqual(large_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(large_response.data), 10)
+
+        self.assertEqual(
+            len(small_capture.captured_queries), len(large_capture.captured_queries)
+        )

@@ -2,12 +2,14 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from core.models import Company
-from vehicles.models import Vehicle, VehicleStatus, VehicleValueChangeLog
+from vehicles.models import Vehicle, VehicleStatus, ValueChangeField, VehicleValueChangeLog
 
 
 def make_vehicle(company, **overrides):
@@ -382,3 +384,37 @@ class WriteSerializerStillBlocksAfterTheseEndpointsExistTests(AuthenticatedAPITe
         self.vehicle.refresh_from_db()
         self.assertEqual(self.vehicle.status, VehicleStatus.SOLD)  # não mudou
         self.assertEqual(self.vehicle.sale_price, Decimal('55000.00'))  # não mudou
+
+
+class ValueChangeLogNPlus1Tests(AuthenticatedAPITestCase):
+    """Prompt 23 — checkpoint arquitetural: mesmo raciocínio de
+    ExpenseListNPlus1Tests/PhotoListNPlus1Tests aplicado a /value-changes/ —
+    vehicle é serializado como PK (via VehicleValueChangeLogSerializer),
+    sem select_related sendo necessário aqui."""
+
+    def _create_logs(self, count):
+        for i in range(count):
+            VehicleValueChangeLog.objects.create(
+                vehicle=self.vehicle,
+                field_name=ValueChangeField.ASKING_PRICE,
+                old_value=None,
+                new_value=Decimal('1000.00') + i,
+                reason=f'Motivo {i}',
+            )
+
+    def test_query_count_does_not_scale_with_log_count(self):
+        self._create_logs(3)
+        with CaptureQueriesContext(connection) as small_capture:
+            small_response = self.client.get(self.value_changes_url())
+        self.assertEqual(small_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(small_response.data), 3)
+
+        self._create_logs(7)
+        with CaptureQueriesContext(connection) as large_capture:
+            large_response = self.client.get(self.value_changes_url())
+        self.assertEqual(large_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(large_response.data), 10)
+
+        self.assertEqual(
+            len(small_capture.captured_queries), len(large_capture.captured_queries)
+        )

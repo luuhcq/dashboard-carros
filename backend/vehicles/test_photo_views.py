@@ -7,7 +7,9 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from PIL import Image
 from rest_framework import status
@@ -201,6 +203,34 @@ class PhotoListTests(PhotoAPITestCase):
         url = reverse('vehicle-photo-list', kwargs={'vehicle_id': uuid.uuid4()})
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class PhotoListNPlus1Tests(PhotoAPITestCase):
+    """Prompt 23 — checkpoint arquitetural: mesmo raciocínio de
+    ExpenseListNPlus1Tests (vehicles/test_expense_views.py) aplicado a
+    /photos/ — image/thumbnail são FileField, servidos como URL direto do
+    storage sem query extra por linha."""
+
+    def test_query_count_does_not_scale_with_photo_count(self):
+        for i in range(3):
+            VehiclePhoto.objects.create(vehicle=self.vehicle, image=make_uploaded_image(f'{i}.jpg'))
+        with CaptureQueriesContext(connection) as small_capture:
+            small_response = self.client.get(self.photo_list_url())
+        self.assertEqual(small_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(small_response.data), 3)
+
+        for i in range(7):
+            VehiclePhoto.objects.create(
+                vehicle=self.vehicle, image=make_uploaded_image(f'extra{i}.jpg')
+            )
+        with CaptureQueriesContext(connection) as large_capture:
+            large_response = self.client.get(self.photo_list_url())
+        self.assertEqual(large_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(large_response.data), 10)
+
+        self.assertEqual(
+            len(small_capture.captured_queries), len(large_capture.captured_queries)
+        )
 
 
 class PhotoPatchTests(PhotoAPITestCase):
