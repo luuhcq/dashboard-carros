@@ -11,12 +11,41 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.db.models import Avg, Count, DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .filters import AGING_BUCKET_RANGES
 from .models import Vehicle, VehicleStatus
 from .querysets import annotate_vehicle_metrics
+
+DashboardSummarySerializer = inline_serializer(
+    'DashboardSummarySerializer',
+    fields={
+        'vehicles_in_stock': serializers.IntegerField(),
+        'capital_employed': serializers.CharField(),
+        'total_asking_price': serializers.CharField(),
+        'potential_profit': serializers.CharField(),
+        'average_aging_days': serializers.FloatField(allow_null=True),
+    },
+)
+
+# Chaves dos buckets ('0-15', '90+' etc.) não são identificadores Python
+# válidos, então não dá pra declarar como campos de uma classe Serializer
+# normal — inline_serializer aceita o dict de fields diretamente.
+DashboardAgingSerializer = inline_serializer(
+    'DashboardAgingSerializer',
+    fields={
+        **{bucket: serializers.IntegerField() for bucket in AGING_BUCKET_RANGES},
+        '90+': serializers.IntegerField(),
+    },
+)
+
+DashboardStatusSerializer = inline_serializer(
+    'DashboardStatusSerializer',
+    fields={choice: serializers.IntegerField() for choice, _ in VehicleStatus.choices},
+)
 
 MONEY_FIELD = DecimalField(max_digits=14, decimal_places=2)
 ZERO_MONEY = Value(Decimal('0'), output_field=MONEY_FIELD)
@@ -39,6 +68,15 @@ class DashboardSummaryView(APIView):
     média", quando na verdade não há veículos pra calcular média nenhuma.
     """
 
+    @extend_schema(
+        responses={200: DashboardSummarySerializer},
+        description=(
+            'Agregado financeiro sobre veículos em estoque (status != SOLD): capital '
+            'empregado, preço de venda pedido total, lucro potencial e aging médio. '
+            'Estoque vazio: somas/contagem voltam 0, average_aging_days volta null '
+            '(média de conjunto vazio é indefinida, não zero).'
+        ),
+    )
     def get(self, request):
         queryset = annotate_vehicle_metrics(Vehicle.objects.exclude(status=VehicleStatus.SOLD))
 
@@ -77,6 +115,14 @@ class DashboardAgingView(APIView):
     não redefinidos aqui. Estoque vazio: cada bucket volta 0 (Count nunca
     retorna None, mesmo sobre conjunto vazio — sem ambiguidade a tratar)."""
 
+    @extend_schema(
+        responses={200: DashboardAgingSerializer},
+        description=(
+            'Contagem de veículos em estoque (status != SOLD) por faixa de aging '
+            '(dias desde purchase_date), nos mesmos buckets do filtro aging_bucket '
+            'de GET /api/vehicles/. Todo bucket aparece mesmo com 0 veículos.'
+        ),
+    )
     def get(self, request):
         queryset = annotate_vehicle_metrics(Vehicle.objects.exclude(status=VehicleStatus.SOLD))
 
@@ -95,6 +141,14 @@ class DashboardStatusView(APIView):
     enum aparece no payload, mesmo com 0 veículos, pra o frontend não
     precisar tratar chave ausente como caso especial."""
 
+    @extend_schema(
+        responses={200: DashboardStatusSerializer},
+        description=(
+            'Contagem de TODOS os veículos por status, inclusive SOLD (diferente de '
+            'summary/ e aging/, que só olham estoque). Todo status do enum aparece '
+            'no payload mesmo com 0 veículos.'
+        ),
+    )
     def get(self, request):
         counts = {choice: 0 for choice, _ in VehicleStatus.choices}
         for row in Vehicle.objects.values('status').annotate(count=Count('id')):

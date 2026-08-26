@@ -7,6 +7,8 @@ exibição (arredondamento + string) o que o service já calculou.
 
 from decimal import ROUND_HALF_UP, Decimal
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .models import Vehicle, VehicleExpense, VehiclePhoto, VehicleStatus, VehicleValueChangeLog
@@ -131,11 +133,13 @@ class VehicleListSerializer(serializers.ModelSerializer):
             cache[vehicle.pk] = VehicleMetricsService.calculate(vehicle)
         return cache[vehicle.pk]
 
+    @extend_schema_field(OpenApiTypes.STR)
     def get_total_cost(self, vehicle):
         if hasattr(vehicle, 'total_cost'):
             return _round_metric_for_display('total_cost', vehicle.total_cost)
         return _round_metric_for_display('total_cost', self._metrics(vehicle).total_cost)
 
+    @extend_schema_field(OpenApiTypes.STR)
     def get_margin(self, vehicle):
         if hasattr(vehicle, 'margin'):
             return _round_metric_for_display('margin', vehicle.margin)
@@ -143,15 +147,41 @@ class VehicleListSerializer(serializers.ModelSerializer):
         value = metrics.margin if vehicle.status == VehicleStatus.SOLD else metrics.projected_margin
         return _round_metric_for_display('margin', value)
 
+    @extend_schema_field(OpenApiTypes.STR)
     def get_aging_bucket(self, vehicle):
         if hasattr(vehicle, 'aging'):
             return _compute_aging_bucket(vehicle.aging)
         return self._metrics(vehicle).aging_bucket
 
+    @extend_schema_field(OpenApiTypes.INT)
     def get_days_in_stock(self, vehicle):
         if hasattr(vehicle, 'aging'):
             return vehicle.aging
         return self._metrics(vehicle).days_in_stock
+
+
+class VehicleMetricsSerializer(serializers.Serializer):
+    """Formato do objeto `metrics` embutido em VehicleDetailSerializer — só
+    pra descrição de schema (get_metrics devolve um dict simples, não uma
+    instância deste serializer). Campos espelham VehicleMetrics
+    (services.py); todos vêm formatados como string (ver
+    _round_metric_for_display), exceto days_in_stock (int) e aging_bucket
+    (str). Campos calculados a partir de sale_price (profit/margin/roi/
+    profit_per_day) são null enquanto o veículo não foi vendido."""
+
+    total_expenses = serializers.CharField()
+    total_cost = serializers.CharField()
+    fipe_percentage_paid = serializers.CharField(allow_null=True)
+    fipe_discount = serializers.CharField(allow_null=True)
+    projected_profit = serializers.CharField(allow_null=True)
+    projected_margin = serializers.CharField(allow_null=True)
+    projected_roi = serializers.CharField(allow_null=True)
+    profit = serializers.CharField(allow_null=True)
+    margin = serializers.CharField(allow_null=True)
+    roi = serializers.CharField(allow_null=True)
+    days_in_stock = serializers.IntegerField()
+    aging_bucket = serializers.CharField()
+    profit_per_day = serializers.CharField(allow_null=True)
 
 
 class VehicleDetailSerializer(serializers.ModelSerializer):
@@ -204,6 +234,7 @@ class VehicleDetailSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    @extend_schema_field(VehicleMetricsSerializer)
     def get_metrics(self, vehicle):
         return _serialize_metrics(VehicleMetricsService.calculate(vehicle))
 

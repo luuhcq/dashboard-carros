@@ -2,6 +2,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -111,6 +112,15 @@ class VehicleViewSet(viewsets.ModelViewSet):
             return error_response
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @extend_schema(
+        request=VehiclePriceUpdateSerializer,
+        responses={200: VehicleDetailSerializer},
+        description=(
+            'Único caminho autorizado para definir/alterar asking_price. Registra '
+            'a mudança em VehicleValueChangeLog com o motivo informado antes de '
+            'gravar o novo valor.'
+        ),
+    )
     @action(detail=True, methods=['post'], url_path='price')
     def price(self, request, pk=None):
         """POST /api/vehicles/{id}/price/ — único caminho autorizado pra
@@ -137,6 +147,16 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
         return Response(VehicleDetailSerializer(vehicle).data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        request=VehicleSaleSerializer,
+        responses={200: VehicleDetailSerializer},
+        description=(
+            'Único caminho autorizado para definir/corrigir sale_price e transicionar '
+            'status para SOLD. Reusar num veículo já SOLD é o fluxo de correção de '
+            'venda: um novo VehicleValueChangeLog é sempre criado, nunca editando o '
+            'anterior.'
+        ),
+    )
     @action(detail=True, methods=['post'], url_path='sale')
     def sale(self, request, pk=None):
         """POST /api/vehicles/{id}/sale/ — único caminho autorizado pra
@@ -168,6 +188,14 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
         return Response(VehicleDetailSerializer(vehicle).data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        responses={200: VehicleValueChangeLogSerializer(many=True)},
+        description=(
+            'Histórico completo de alterações de asking_price e sale_price do '
+            'veículo (um registro por chamada de /price/ ou /sale/), mais recente '
+            'primeiro.'
+        ),
+    )
     @action(detail=True, methods=['get'], url_path='value-changes')
     def value_changes(self, request, pk=None):
         """GET /api/vehicles/{id}/value-changes/ — histórico completo
@@ -195,6 +223,12 @@ class VehicleExpenseListCreateView(generics.ListCreateAPIView):
         return get_object_or_404(Vehicle.objects.all(), pk=self.kwargs['vehicle_id'])
 
     def get_queryset(self):
+        # swagger_fake_view: geração de schema instancia a view sem
+        # vehicle_id de verdade na URL — sem essa checagem, get_vehicle()
+        # levanta KeyError e o drf-spectacular não consegue introspectar
+        # o queryset (só usado pra inferir o Model, não pra listar nada).
+        if getattr(self, 'swagger_fake_view', False):
+            return VehicleExpense.objects.none()
         vehicle = self.get_vehicle()
         return VehicleExpense.objects.filter(vehicle=vehicle)
 
@@ -235,6 +269,10 @@ class VehiclePhotoListCreateView(generics.ListCreateAPIView):
         return get_object_or_404(Vehicle.objects.all(), pk=self.kwargs['vehicle_id'])
 
     def get_queryset(self):
+        # swagger_fake_view: mesmo motivo do VehicleExpenseListCreateView
+        # acima — geração de schema não tem vehicle_id de verdade na URL.
+        if getattr(self, 'swagger_fake_view', False):
+            return VehiclePhoto.objects.none()
         vehicle = self.get_vehicle()
         return VehiclePhoto.objects.filter(vehicle=vehicle)
 
