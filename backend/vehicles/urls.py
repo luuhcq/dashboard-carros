@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .dashboard_views import DashboardAgingView, DashboardStatusView, DashboardSummaryView
 from .views import (
     VehicleExpenseDetailView,
     VehicleExpenseListCreateView,
@@ -37,4 +38,7 @@ urlpatterns = [
         VehiclePhotoDetailView.as_view(),
         name='photo-detail',
     ),
+    path('dashboard/summary/', DashboardSummaryView.as_view(), name='dashboard-summary'),
+    path('dashboard/aging/', DashboardAgingView.as_view(), name='dashboard-aging'),
+    path('dashboard/status/', DashboardStatusView.as_view(), name='dashboard-status'),
 ] + router.urls
