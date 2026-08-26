@@ -185,6 +185,18 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    # Decisão consciente (checkpoint Prompt 23), não esquecimento: sem
+    # DEFAULT_PAGINATION_CLASS de propósito. /api/vehicles/ e as listagens
+    # aninhadas (/expenses/, /photos/) representam o estoque em posse de uma
+    # revenda — volume esperado na V1 é dezenas a poucas centenas de linhas,
+    # não milhares. Paginar agora trocaria o formato de resposta (lista crua
+    # -> envelope results/count/next/previous) sem nenhum consumidor real
+    # ainda — decisão melhor tomada com dado de volume real do que
+    # especulativamente aqui, bem antes do frontend existir. Revisar se o
+    # estoque ativo de uma revenda passar a ultrapassar ~200-300 veículos de
+    # forma consistente, ou se a resposta ficar perceptivelmente lenta em
+    # produção — isso é avaliação de performance sob carga real, fora do
+    # escopo deste checkpoint (Prompt 45 vai tratar disso).
 }
 
 SPECTACULAR_SETTINGS = {
