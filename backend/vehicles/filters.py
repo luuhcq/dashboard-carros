@@ -2,6 +2,10 @@ import django_filters
 
 from .models import Vehicle, VehicleStatus
 
+# Mesmas faixas de vehicles.services._aging_bucket, duplicadas de propósito
+# (formatos diferentes: tuplas de limite pra uso em Q()/Count() do ORM aqui,
+# comparação sequencial em Python lá) — se mudar aqui, mudar lá também, não
+# há teste que pegue divergência entre os dois hoje.
 AGING_BUCKET_RANGES = {
     '0-15': (0, 15),
     '16-30': (16, 30),

@@ -55,6 +55,10 @@ class Vehicle(SoftDeleteModel):
     # next_internal_code). Imutável após a criação — ver save() abaixo.
     internal_code = models.CharField(max_length=50, unique=True, null=True, blank=True)
 
+    # PROTECT (não CASCADE): Company nunca deveria poder ser excluída
+    # enquanto tiver veículos vinculados — perder um Vehicle (registro
+    # financeiro) como efeito colateral de apagar a empresa dona seria
+    # silencioso e destrutivo demais pra esse tipo de dado.
     company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='vehicles')
 
     brand = models.CharField(max_length=100)
@@ -168,6 +172,10 @@ class VehicleExpense(SoftDeleteModel):
     """Despesa associada a um veículo (1 Vehicle — N VehicleExpense)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # PROTECT: despesa é registro financeiro (compõe total_cost) — mesma
+    # razão de Vehicle.company acima, não CASCADE por padrão em dado
+    # financeiro. Hard delete de Vehicle não é exposto por endpoint nenhum
+    # de qualquer forma (soft delete é o fluxo normal, Prompt 15).
     vehicle = models.ForeignKey(Vehicle, on_delete=models.PROTECT, related_name='expenses')
 
     date = models.DateField()
@@ -217,6 +225,10 @@ class VehicleValueChangeLog(models.Model):
     também está registrado como somente leitura)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # PROTECT: aqui o argumento é ainda mais forte que em Vehicle.company/
+    # VehicleExpense.vehicle — isto é o próprio log de auditoria; CASCADE
+    # apagaria o histórico junto com o veículo, contradizendo a garantia de
+    # "nunca excluível" que o resto do model implementa via save()/delete().
     vehicle = models.ForeignKey(
         Vehicle, on_delete=models.PROTECT, related_name='value_change_logs'
     )
@@ -280,6 +292,10 @@ class VehiclePhoto(models.Model):
     exposto por nenhum endpoint."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # CASCADE (diferente do PROTECT em VehicleExpense/VehicleValueChangeLog
+    # acima): fotos são mídia, não registro financeiro/de auditoria — faz
+    # sentido que sumam junto com o veículo dono num hard delete, ao
+    # contrário de despesas/logs, que precisam sobreviver.
     vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='photos')
 
     image = models.ImageField(upload_to=vehicle_photo_upload_path)

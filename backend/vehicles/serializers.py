@@ -28,6 +28,15 @@ from .services import _aging_bucket as _compute_aging_bucket
 #
 # Tudo sai como string (nunca Decimal cru, nunca float) — mesma garantia que
 # um DecimalField do DRF já dá pros campos do model.
+#
+# Modo de arredondamento: ROUND_HALF_UP explícito em toda parte, nunca o
+# default do Python (ROUND_HALF_EVEN / "banker's rounding"). Decisão
+# deliberada, não a que teria saído se eu só chamasse quantize() sem
+# especificar rounding=: é o comportamento que qualquer usuário não-técnico
+# espera de um sistema financeiro (0,125 -> 0,13, não 0,12) — confirmado com
+# testes de borda específicos em test_serializers.py::RoundingModeTests que
+# provam a divergência real entre os dois modos, não só que um valor
+# genérico "deu certo".
 
 FRACTION_METRIC_FIELDS = {
     'fipe_percentage_paid',
@@ -206,10 +215,11 @@ class VehicleWriteSerializer(serializers.ModelSerializer):
     asking_price/sale_price são bloqueados em TODA escrita por aqui — create
     e PATCH, sem exceção. Não existe caminho de criação ou edição de Vehicle
     que grave esses dois campos diretamente; a única forma de defini-los ou
-    alterá-los é pelos endpoints dedicados do Prompt 17 (ainda não
-    implementados), que vão gerar o VehicleValueChangeLog com justificativa
-    obrigatória — inclusive a primeira definição do valor precisa desse
-    registro de auditoria (com old_value=None), não só mudanças posteriores.
+    alterá-los é pelos endpoints dedicados POST /api/vehicles/{id}/price/ e
+    /sale/ (Prompt 17, em vehicles/views.py), que geram o
+    VehicleValueChangeLog com justificativa obrigatória — inclusive a
+    primeira definição do valor precisa desse registro de auditoria (com
+    old_value=None), não só mudanças posteriores.
 
     Decisão sobre requisição com campo proibido junto de campos válidos
     (confirmada com o usuário): rejeita a REQUISIÇÃO INTEIRA — 400, nada é

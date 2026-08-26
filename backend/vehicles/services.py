@@ -52,6 +52,15 @@ def _get_total_expenses(vehicle: Vehicle) -> Decimal:
 
 
 def _aging_bucket(days_in_stock: int) -> str:
+    """Faixas fixadas pelo briefing (0-15/16-30/31-45/46-60/61-90/90+).
+
+    Duplicado de propósito, não composição: vehicles.filters.
+    AGING_BUCKET_RANGES tem os mesmos limites pra uso em SQL (filtro
+    aging_bucket= e dashboard-aging), porque aqui é comparação em Python
+    (int) e lá é usado dentro de Q()/Count() do ORM — não dá pra
+    compartilhar a mesma estrutura sem acoplar os dois módulos por pouco
+    ganho. Se as faixas mudarem, mudam nos dois lugares — não há teste
+    automático hoje que pegue divergência entre eles."""
     if days_in_stock <= 15:
         return '0-15'
     if days_in_stock <= 30:
