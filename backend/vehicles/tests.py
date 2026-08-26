@@ -19,6 +19,7 @@ from vehicles.models import (
     Vehicle,
     VehicleExpense,
     VehiclePhoto,
+    VehicleStatus,
     VehicleValueChangeLog,
 )
 
@@ -82,6 +83,7 @@ class VehicleSoftDeleteManagerTests(TestCase):
 
     def test_soft_deleted_vehicle_still_accessible_via_all_objects(self):
         self.vehicle.deleted_at = timezone.now()
+        self.vehicle.deletion_reason = 'teste'
         self.vehicle.save()
 
         self.assertIn(self.vehicle, Vehicle.all_objects.all())
@@ -208,6 +210,7 @@ class VehicleExpenseSoftDeleteManagerTests(TestCase):
 
     def test_soft_deleted_expense_still_accessible_via_all_objects(self):
         self.expense.deleted_at = timezone.now()
+        self.expense.deletion_reason = 'teste'
         self.expense.save()
 
         self.assertIn(self.expense, VehicleExpense.all_objects.all())
@@ -288,6 +291,60 @@ class VehicleExpenseAmountValidationTests(TestCase):
         )
         expense.save()  # não deve levantar
         self.assertEqual(VehicleExpense.objects.count(), 1)
+
+
+class VehicleSalePriceValidationTests(TestCase):
+    """Prompt 23, Dívida #3: sale_price > 0 vale pra qualquer caminho de
+    escrita (não só a API), via MinValueValidator no field — mesmo padrão
+    de VehicleExpenseAmountValidationTests acima, escolhido de propósito em
+    vez de colocar a checagem em Vehicle.clean() (ver justificativa no
+    comentário do field em models.py: valor de campo único é categoria
+    diferente das regras de consistência estrutural que clean() já trata).
+
+    status=SOLD + sale_date sempre setados junto, isolando a checagem de
+    VALOR (o alvo deste teste) da checagem de PRESENÇA que Vehicle.clean()
+    já faz — sem isso, sale_price residual bateria as duas regras ao mesmo
+    tempo e o teste ficaria menos claro sobre qual delas está sendo
+    exercitada.
+    """
+
+    def setUp(self):
+        self.company = Company.objects.create(name='Empresa sale_price')
+
+    def _sold_vehicle(self, sale_price):
+        return Vehicle(
+            company=self.company, brand='X', model='Y',
+            purchase_date=date(2026, 1, 1), purchase_price=Decimal('1000.00'),
+            status=VehicleStatus.SOLD, sale_date=date(2026, 2, 1), sale_price=sale_price,
+        )
+
+    def test_zero_sale_price_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self._sold_vehicle(Decimal('0.00')).full_clean()
+
+    def test_negative_sale_price_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self._sold_vehicle(Decimal('-100.00')).full_clean()
+
+    def test_positive_sale_price_is_accepted(self):
+        self._sold_vehicle(Decimal('45000.00')).full_clean()  # não deve levantar
+
+    def test_zero_sale_price_is_rejected_by_save_without_calling_full_clean_manually(self):
+        vehicle = self._sold_vehicle(Decimal('0.00'))
+        with self.assertRaises(ValidationError):
+            vehicle.save()
+        self.assertEqual(Vehicle.all_objects.count(), 0)
+
+    def test_null_sale_price_still_accepted_for_non_sold_vehicle(self):
+        """Sanidade: o validator não se aplica a um veículo sem venda ainda
+        (sale_price=None é o estado normal, não deve disparar o validator —
+        full_clean()/clean_fields() do Django já pula validators pra valor
+        None em campo nullable, sem precisar de condicional aqui)."""
+        vehicle = Vehicle(
+            company=self.company, brand='X', model='Y',
+            purchase_date=date(2026, 1, 1), purchase_price=Decimal('1000.00'),
+        )
+        vehicle.full_clean()  # não deve levantar
 
 
 class VehicleValueChangeLogTests(TestCase):
@@ -428,6 +485,7 @@ class AdminSoftDeleteVisibilityTests(TestCase):
 
         self.deleted_expense = make_expense(self.active_vehicle, description='Despesa deletada')
         self.deleted_expense.deleted_at = timezone.now()
+        self.deleted_expense.deletion_reason = 'teste admin'
         self.deleted_expense.save()
 
         self.active_expense = make_expense(self.active_vehicle, description='Despesa ativa')
