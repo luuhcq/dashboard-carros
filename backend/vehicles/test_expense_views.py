@@ -187,6 +187,7 @@ class ExpenseListTests(AuthenticatedAPITestCase):
 
     def test_list_for_soft_deleted_vehicle_returns_404(self):
         self.vehicle.deleted_at = timezone.now()
+        self.vehicle.deletion_reason = 'teste'
         self.vehicle.save()
 
         response = self.client.get(self.expense_list_url(self.vehicle))
@@ -198,6 +199,7 @@ class ExpenseListTests(AuthenticatedAPITestCase):
         active = make_expense(self.vehicle, description='Ativa')
         deleted = make_expense(self.vehicle, description='Deletada')
         deleted.deleted_at = timezone.now()
+        deleted.deletion_reason = 'teste'
         deleted.save()
         make_expense(other_vehicle, description='De outro veículo')
 

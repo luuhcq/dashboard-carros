@@ -111,6 +111,7 @@ class AnnotationsMatchServiceTests(TestCase):
             description='deletada', amount=Decimal('9999.00'),
         )
         deleted.deleted_at = timezone.now()
+        deleted.deletion_reason = 'teste'
         deleted.save()
 
         annotated = annotate_vehicle_metrics(

@@ -51,6 +51,7 @@ class TotalExpensesTests(TestCase):
         make_expense(vehicle, Decimal('200.00'))
         deleted = make_expense(vehicle, Decimal('9999.00'))
         deleted.deleted_at = timezone.now()
+        deleted.deletion_reason = 'teste'
         deleted.save()
 
         metrics = VehicleMetricsService.calculate(vehicle)
