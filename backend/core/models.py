@@ -1,5 +1,6 @@
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -30,6 +31,23 @@ class SoftDeleteModel(models.Model):
 
     class Meta:
         abstract = True
+
+    def clean(self):
+        """Mesma classe de lacuna fechada em Vehicle.clean() pro par
+        status/sale_price/sale_date (Prompt 19/23): o Admin expõe deleted_at
+        e deletion_reason como campos editáveis independentes, sem
+        validação cruzada — dava pra soft-deletar um registro pelo Admin
+        deixando deletion_reason em branco, bypassando a exigência que
+        _soft_delete_or_400 força no fluxo normal da API (Prompt 15/16)."""
+        super().clean()
+        if self.deleted_at is not None and not self.deletion_reason:
+            raise ValidationError(
+                {'deletion_reason': 'Obrigatório quando deleted_at está preenchido.'}
+            )
+        if self.deleted_at is None and self.deletion_reason:
+            raise ValidationError(
+                {'deletion_reason': 'Só pode estar preenchido quando deleted_at também está.'}
+            )
 
 
 class Company(models.Model):

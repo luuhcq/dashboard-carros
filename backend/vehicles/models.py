@@ -89,7 +89,21 @@ class Vehicle(SoftDeleteModel):
     asking_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
 
     sale_date = models.DateField(null=True, blank=True)
-    sale_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    # MinValueValidator no field, não checagem em clean() (Prompt 23,
+    # Dívida #3 do checkpoint): sale_price > 0 é restrição de VALOR de um
+    # único campo, categoria diferente das regras de consistência
+    # ESTRUTURAL entre campos que clean() já trata (status/sale_price/
+    # sale_date, deleted_at/deletion_reason, internal_code). Mesmo padrão
+    # já usado em VehicleExpense.amount — full_clean() pula validators
+    # quando o valor é None, então não precisa de condicional pra só
+    # aplicar quando status==SOLD.
+    sale_price = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
 
     notes = models.TextField(null=True, blank=True)
 
@@ -106,6 +120,21 @@ class Vehicle(SoftDeleteModel):
 
     def clean(self):
         super().clean()
+        # internal_code imutável após criação (Prompt 06) — checagem estava só
+        # em save() (raise fora do ciclo de full_clean()), então o form do
+        # Admin nunca via esse erro antes de chamar obj.save(): a exceção
+        # escapava como 500 puro em vez de erro de validação no form (achado
+        # no Prompt 23). Aqui, dentro de clean(), full_clean() já cobre tanto
+        # o form do Admin (via _post_clean()) quanto o save() direto.
+        if (
+            not self._state.adding
+            and self._original_internal_code
+            and self.internal_code != self._original_internal_code
+        ):
+            raise ValidationError(
+                {'internal_code': 'internal_code é imutável e não pode ser alterado após a criação.'}
+            )
+
         # status=SOLD sem sale_price/sale_date é um estado inconsistente que
         # já foi alcançável na prática via Django Admin (form padrão do
         # ModelAdmin não passava por essa checagem) — não é só teórico.
@@ -135,13 +164,8 @@ class Vehicle(SoftDeleteModel):
                 raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
-        if self._state.adding:
-            if not self.internal_code:
-                self.internal_code = next_internal_code()
-        elif self._original_internal_code and self.internal_code != self._original_internal_code:
-            raise ValidationError(
-                {'internal_code': 'internal_code é imutável e não pode ser alterado após a criação.'}
-            )
+        if self._state.adding and not self.internal_code:
+            self.internal_code = next_internal_code()
 
         self.full_clean()
         super().save(*args, **kwargs)
