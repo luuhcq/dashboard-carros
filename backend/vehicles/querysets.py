@@ -2,7 +2,7 @@
 
 Resolve em SQL o que VehicleMetricsService (Prompt 12) calcula em Python
 linha a linha — especificamente os campos usados em ordenação/filtro da
-listagem: total_cost, aging (days_in_stock), margin, roi. É isso que fecha
+listagem: total_cost, days_in_stock, margin, roi. É isso que fecha
 o N+1 documentado como limitação conhecida no Prompt 14 (decisão 4):
 antes, VehicleListSerializer chamava VehicleMetricsService.calculate() por
 veículo (uma query de soma de despesas por linha); agora esse cálculo sai
@@ -31,8 +31,15 @@ NULL_RATIO = Value(None, output_field=RATIO_FIELD)
 
 
 def annotate_vehicle_metrics(queryset: QuerySet, today=None) -> QuerySet:
-    """Annotates no queryset de Vehicle: total_expenses, total_cost, aging
-    (int, dias em estoque), margin, roi.
+    """Annotates no queryset de Vehicle: total_expenses, total_cost,
+    days_in_stock (int, dias em estoque), margin, roi.
+
+    days_in_stock (Prompt 23): nome unificado com o campo homônimo exposto
+    pelos serializers e VehicleMetricsService — antes a annotation se
+    chamava `aging`, nome diferente do que a API expunha (`days_in_stock`),
+    então `?ordering=` usava um nome e a resposta JSON usava outro pro
+    mesmo valor. aging_bucket e /api/dashboard/aging/ não mudaram — esses
+    são sobre o conceito de faixa/distribuição, não o número cru.
 
     today: injetável só pra teste determinístico (mesmo propósito do
     parâmetro equivalente em VehicleMetricsService.calculate).
@@ -63,7 +70,7 @@ def annotate_vehicle_metrics(queryset: QuerySet, today=None) -> QuerySet:
     # annotation dentro da mesma chamada que a declara).
     queryset = queryset.annotate(
         total_expenses=total_expenses_expr,
-        aging=Extract(aging_diff, 'day'),
+        days_in_stock=Extract(aging_diff, 'day'),
     ).annotate(
         total_cost=F('purchase_price') + F('total_expenses'),
     )

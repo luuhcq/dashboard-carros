@@ -90,7 +90,7 @@ class DashboardSummaryView(APIView):
                 Sum(F('asking_price') - F('total_cost'), filter=Q(asking_price__isnull=False)),
                 ZERO_MONEY,
             ),
-            average_aging_days=Avg('aging'),
+            average_aging_days=Avg('days_in_stock'),
         )
 
         average_aging = aggregates['average_aging_days']
@@ -127,10 +127,10 @@ class DashboardAgingView(APIView):
         queryset = annotate_vehicle_metrics(Vehicle.objects.exclude(status=VehicleStatus.SOLD))
 
         bucket_filters = {
-            bucket: Count('id', filter=Q(aging__gte=low, aging__lte=high))
+            bucket: Count('id', filter=Q(days_in_stock__gte=low, days_in_stock__lte=high))
             for bucket, (low, high) in AGING_BUCKET_RANGES.items()
         }
-        bucket_filters['90+'] = Count('id', filter=Q(aging__gt=90))
+        bucket_filters['90+'] = Count('id', filter=Q(days_in_stock__gt=90))
 
         return Response(queryset.aggregate(**bucket_filters))
 

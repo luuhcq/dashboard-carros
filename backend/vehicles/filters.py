@@ -4,8 +4,10 @@ from .models import Vehicle, VehicleStatus
 
 # Mesmas faixas de vehicles.services._aging_bucket, duplicadas de propósito
 # (formatos diferentes: tuplas de limite pra uso em Q()/Count() do ORM aqui,
-# comparação sequencial em Python lá) — se mudar aqui, mudar lá também, não
-# há teste que pegue divergência entre os dois hoje.
+# comparação sequencial em Python lá) — se mudar aqui, mudar lá também.
+# Paridade entre os dois é testada em vehicles/test_aging_bucket_parity.py
+# (Prompt 23) — uma divergência acidental quebra a suíte, não passa
+# despercebida.
 AGING_BUCKET_RANGES = {
     '0-15': (0, 15),
     '16-30': (16, 30),
@@ -20,7 +22,10 @@ AGING_BUCKET_CHOICES = [(bucket, bucket) for bucket in (*AGING_BUCKET_RANGES, '9
 class VehicleFilter(django_filters.FilterSet):
     """Opera sobre o queryset já anotado por annotate_vehicle_metrics()
     (aplicado em VehicleViewSet.get_queryset() antes do filtro) — aging_bucket
-    filtra pela coluna `aging` já calculada em SQL, não recalcula nada aqui.
+    filtra pela coluna `days_in_stock` já calculada em SQL (renomeada de
+    `aging` no Prompt 23, unificando com o nome exposto pela API — o nome
+    do filtro/parâmetro aging_bucket em si não mudou, só a coluna interna
+    que ele referencia), não recalcula nada aqui.
     """
 
     status = django_filters.ChoiceFilter(choices=VehicleStatus.choices)
@@ -42,6 +47,6 @@ class VehicleFilter(django_filters.FilterSet):
 
     def filter_aging_bucket(self, queryset, name, value):
         if value == '90+':
-            return queryset.filter(aging__gt=90)
+            return queryset.filter(days_in_stock__gt=90)
         low, high = AGING_BUCKET_RANGES[value]
-        return queryset.filter(aging__gte=low, aging__lte=high)
+        return queryset.filter(days_in_stock__gte=low, days_in_stock__lte=high)
