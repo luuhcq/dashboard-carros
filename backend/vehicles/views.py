@@ -1,10 +1,10 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
-from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 
 from .filters import VehicleFilter
@@ -71,7 +71,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
         'purchase_price',
         'total_cost',
         'asking_price',
-        'aging',
+        'days_in_stock',
         'margin',
         'roi',
         'model',
@@ -220,6 +220,16 @@ class VehicleExpenseListCreateView(generics.ListCreateAPIView):
     def get_vehicle(self):
         # Vehicle.objects já exclui soft-deletados — 404 automático tanto
         # pra veículo inexistente quanto pra soft-deletado, sem lógica extra.
+        #
+        # get_object_or_404 é o do rest_framework.generics, não o do django.
+        # shortcuts (Prompt 23, achado na auditoria de formato de erro): a
+        # versão do Django só converte DoesNotExist em Http404 — um
+        # vehicle_id malformado (não-UUID) levanta ValidationError direto do
+        # UUIDField, que escapava sem tratamento (500). A versão do DRF
+        # também captura (TypeError, ValueError, ValidationError) e converte
+        # pra Http404, que o exception_handler do DRF já sabe formatar como
+        # JSON — mesmo comportamento que GenericAPIView.get_object() já dá
+        # de graça pras rotas do router (vehicles/{pk}/, /price/, /sale/).
         return get_object_or_404(Vehicle.objects.all(), pk=self.kwargs['vehicle_id'])
 
     def get_queryset(self):
