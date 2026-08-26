@@ -63,6 +63,8 @@ class VehicleSoftDeleteManagerTests(TestCase):
         self.company = Company.objects.create(name='Empresa de teste')
         self.vehicle = Vehicle.objects.create(
             company=self.company,
+            brand='Marca',
+            model='Modelo',
             purchase_date=date(2026, 1, 10),
             purchase_price=Decimal('50000.00'),
         )

@@ -1,10 +1,12 @@
+from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import generics, status, viewsets
+from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from .filters import VehicleFilter
 from .models import (
     Vehicle,
     VehicleExpense,
@@ -13,6 +15,7 @@ from .models import (
     VehicleValueChangeLog,
     ValueChangeField,
 )
+from .querysets import annotate_vehicle_metrics
 from .serializers import (
     VehicleDetailSerializer,
     VehicleExpenseSerializer,
@@ -58,6 +61,37 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
     queryset = Vehicle.objects.all().order_by('-created_at')
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = VehicleFilter
+    search_fields = ['internal_code', 'brand', 'model', 'version', 'plate']
+    ordering_fields = [
+        'purchase_date',
+        'purchase_price',
+        'total_cost',
+        'asking_price',
+        'aging',
+        'margin',
+        'roi',
+        'model',
+    ]
+
+    def get_queryset(self):
+        """Sempre anotado (Prompt 19), não só pra list(): get_object() (usado
+        por retrieve/patch/delete) também passa pelos mesmos filter_backends
+        acima — se a annotation fosse condicional só a 'list', um ordering=
+        ou filtro na query string de um PATCH, por exemplo, quebraria com
+        FieldError por referenciar uma coluna anotada inexistente. O custo
+        extra de anotar pra uma busca de linha única é desprezível.
+
+        select_related('company') evita uma query extra por linha se/quando
+        o campo company for exposto num serializer — hoje nenhum dos dois
+        (list/detail) usa, mas está aqui porque não custa nada continuar sem
+        uso e resolve na hora se algum serializer futuro passar a expor
+        company.
+        """
+        queryset = Vehicle.objects.select_related('company').order_by('-created_at')
+        return annotate_vehicle_metrics(queryset)
 
     def get_serializer_class(self):
         if self.action == 'list':

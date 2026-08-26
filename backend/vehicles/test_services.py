@@ -155,7 +155,17 @@ class RealizedMetricsTests(TestCase):
         self.assertIsNone(metrics.roi)
 
     def test_profit_margin_roi_none_when_sold_but_sale_price_missing(self):
-        vehicle = make_vehicle(self.company, status=VehicleStatus.SOLD, sale_price=None)
+        """status=SOLD sem sale_price agora é bloqueado por
+        Vehicle.clean()/full_clean() (ver models.py) — não dá mais pra criar
+        esse estado via .save() normal. Usa .update() pra contornar o
+        save()/clean() e simular o estado mesmo assim (mesmo padrão já usado
+        no Prompt 10 pra testar a constraint de capa via bypass), já que o
+        service precisa continuar defensivo caso esse estado exista por
+        qualquer outro caminho (migração antiga, bug futuro etc.)."""
+        vehicle = make_vehicle(self.company)
+        Vehicle.objects.filter(pk=vehicle.pk).update(status=VehicleStatus.SOLD)
+        vehicle.refresh_from_db()
+
         metrics = VehicleMetricsService.calculate(vehicle)
         self.assertIsNone(metrics.profit)
         self.assertIsNone(metrics.margin)

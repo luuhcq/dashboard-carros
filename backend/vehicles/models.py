@@ -100,6 +100,36 @@ class Vehicle(SoftDeleteModel):
         super().__init__(*args, **kwargs)
         self._original_internal_code = self.internal_code
 
+    def clean(self):
+        super().clean()
+        # status=SOLD sem sale_price/sale_date é um estado inconsistente que
+        # já foi alcançável na prática via Django Admin (form padrão do
+        # ModelAdmin não passava por essa checagem) — não é só teórico.
+        # A API (VehicleWriteSerializer + POST /sale/) já impedia isso;
+        # full_clean() aqui fecha o mesmo buraco pra qualquer caminho de
+        # escrita, incluindo Admin e shell. Direção oposta (sale_price/
+        # sale_date preenchidos com status != SOLD) também é bloqueada
+        # abaixo — mesma classe de inconsistência, sentido inverso.
+        if self.status == VehicleStatus.SOLD:
+            errors = {}
+            if self.sale_price is None:
+                errors['sale_price'] = 'sale_price é obrigatório quando status é SOLD.'
+            if self.sale_date is None:
+                errors['sale_date'] = 'sale_date é obrigatório quando status é SOLD.'
+            if errors:
+                raise ValidationError(errors)
+        else:
+            # Mesma inconsistência, direção oposta: sale_price/sale_date
+            # residual num veículo que não está (mais) SOLD — ex. alguém
+            # reverte o status manualmente sem limpar os dados de venda.
+            errors = {}
+            if self.sale_price is not None:
+                errors['sale_price'] = 'sale_price só pode estar preenchido quando status é SOLD.'
+            if self.sale_date is not None:
+                errors['sale_date'] = 'sale_date só pode estar preenchido quando status é SOLD.'
+            if errors:
+                raise ValidationError(errors)
+
     def save(self, *args, **kwargs):
         if self._state.adding:
             if not self.internal_code:
@@ -109,6 +139,7 @@ class Vehicle(SoftDeleteModel):
                 {'internal_code': 'internal_code é imutável e não pode ser alterado após a criação.'}
             )
 
+        self.full_clean()
         super().save(*args, **kwargs)
         self._original_internal_code = self.internal_code
 

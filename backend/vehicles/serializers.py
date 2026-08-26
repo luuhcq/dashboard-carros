@@ -11,6 +11,7 @@ from rest_framework import serializers
 
 from .models import Vehicle, VehicleExpense, VehiclePhoto, VehicleStatus, VehicleValueChangeLog
 from .services import VehicleMetrics, VehicleMetricsService
+from .services import _aging_bucket as _compute_aging_bucket
 
 # Arredondamento de exibição das métricas derivadas — decisão tomada aqui,
 # não estava especificada antes (VehicleMetricsService devolve Decimal com
@@ -71,13 +72,19 @@ class VehicleListSerializer(serializers.ModelSerializer):
     nela: total_cost, margin (projected_margin ou margin, dependendo se já
     foi vendido), aging_bucket, days_in_stock.
 
-    N+1 conhecido: cada linha desta listagem chama
-    VehicleMetricsService.calculate() sem total_expenses pré-calculado, o
-    que dispara uma query de soma por veículo. Resolver isso é
-    responsabilidade do ViewSet (annotate + Sum no queryset, passado via
-    contexto), que ainda não existe — fora do escopo deste prompt (só
-    serializers). O service já foi desenhado em Prompt 12 justamente para
-    aceitar esse valor pré-calculado quando essa camada existir.
+    N+1 resolvido (Prompt 19): quando o queryset já vem anotado por
+    vehicles.querysets.annotate_vehicle_metrics() — é isso que
+    VehicleViewSet.get_queryset() faz pra list() —, os campos calculados
+    são lidos direto dos atributos anotados na instância (populados em SQL,
+    zero query extra por linha). A checagem usa hasattr(), não
+    "valor is not None": margin/roi podem ser legitimamente None mesmo
+    anotados (ex. sem asking_price), então checar por None erradamente
+    dispararia o fallback abaixo e reintroduziria o N+1 pra esses casos.
+
+    Se o serializer for usado sobre um queryset SEM essa annotation (ex.
+    instanciado direto sobre um objeto solto), cai pra chamar
+    VehicleMetricsService por linha — mantém compatibilidade, mas isso
+    reintroduziria o N+1 se usado assim numa listagem de verdade.
     """
 
     total_cost = serializers.SerializerMethodField()
@@ -106,6 +113,7 @@ class VehicleListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def _metrics(self, vehicle: Vehicle) -> VehicleMetrics:
+        """Fallback só usado quando o queryset não veio anotado."""
         cache = getattr(self, '_metrics_cache', None)
         if cache is None:
             cache = {}
@@ -115,17 +123,25 @@ class VehicleListSerializer(serializers.ModelSerializer):
         return cache[vehicle.pk]
 
     def get_total_cost(self, vehicle):
+        if hasattr(vehicle, 'total_cost'):
+            return _round_metric_for_display('total_cost', vehicle.total_cost)
         return _round_metric_for_display('total_cost', self._metrics(vehicle).total_cost)
 
     def get_margin(self, vehicle):
+        if hasattr(vehicle, 'margin'):
+            return _round_metric_for_display('margin', vehicle.margin)
         metrics = self._metrics(vehicle)
         value = metrics.margin if vehicle.status == VehicleStatus.SOLD else metrics.projected_margin
         return _round_metric_for_display('margin', value)
 
     def get_aging_bucket(self, vehicle):
+        if hasattr(vehicle, 'aging'):
+            return _compute_aging_bucket(vehicle.aging)
         return self._metrics(vehicle).aging_bucket
 
     def get_days_in_stock(self, vehicle):
+        if hasattr(vehicle, 'aging'):
+            return vehicle.aging
         return self._metrics(vehicle).days_in_stock
 
 
