@@ -47,8 +47,14 @@ class AdminCannotCreateInconsistentSoldStateTests(TestCase):
         self.assertIsNone(self.vehicle.sale_price)
         self.assertIsNone(self.vehicle.sale_date)
 
-    def test_admin_change_form_accepts_status_sold_with_sale_price_and_date(self):
-        """Confirma que a correção não bloqueou o caso válido — sanidade."""
+    def test_admin_change_form_rejects_transition_to_sold_via_price_fields(self):
+        """Prompt 23 tornou este caso INválido de propósito (mudança de
+        comportamento, não regressão): VehicleAdminForm.clean_sale_price
+        agora rejeita qualquer alteração de sale_price feita direto pelo
+        Admin, então SOLD com sale_price/sale_date preenchidos manualmente
+        no form deixou de ser um caminho legítimo — só POST
+        /api/vehicles/{id}/sale/ pode fazer essa transição (ver
+        test_admin_field_consistency.AdminCannotEditPriceFieldsWithoutAuditTrailTests)."""
         url = f'/admin/vehicles/vehicle/{self.vehicle.pk}/change/'
         response = self.client.post(url, data={
             'company': str(self.company.id),
@@ -63,12 +69,39 @@ class AdminCannotCreateInconsistentSoldStateTests(TestCase):
             '_save': 'Salvar',
         })
 
-        self.assertEqual(response.status_code, 302)  # redirecionou = salvou
-
+        self.assertEqual(response.status_code, 200)  # form re-renderizado com erro
         self.vehicle.refresh_from_db()
-        self.assertEqual(self.vehicle.status, VehicleStatus.SOLD)
+        self.assertEqual(self.vehicle.status, VehicleStatus.PURCHASED)  # não mudou
+        self.assertIsNone(self.vehicle.sale_price)
+
+    def test_admin_change_form_accepts_edit_of_already_sold_vehicle_without_touching_price(self):
+        """Sanidade pro caso legítimo que sobrevive à restrição acima:
+        reeditar um veículo JÁ vendido (status/sale_price/sale_date
+        consistentes, definidos originalmente via POST /sale/) sem alterar
+        os campos de preço continua salvando normalmente."""
+        self.vehicle.status = VehicleStatus.SOLD
+        self.vehicle.sale_date = date(2026, 2, 1)
+        self.vehicle.sale_price = Decimal('1200.00')
+        self.vehicle.save()
+
+        url = f'/admin/vehicles/vehicle/{self.vehicle.pk}/change/'
+        response = self.client.post(url, data={
+            'company': str(self.company.id),
+            'brand': 'X',
+            'model': 'Y renomeado',
+            'status': VehicleStatus.SOLD,
+            'purchase_date': '2026-01-01',
+            'purchase_price': '1000.00',
+            'sale_date': '2026-02-01',
+            'sale_price': '1200.00',  # reenviado sem mudar
+            'internal_code': self.vehicle.internal_code,
+            '_save': 'Salvar',
+        })
+
+        self.assertEqual(response.status_code, 302)  # redirecionou = salvou
+        self.vehicle.refresh_from_db()
+        self.assertEqual(self.vehicle.model, 'Y renomeado')
         self.assertEqual(self.vehicle.sale_price, Decimal('1200.00'))
-        self.assertEqual(self.vehicle.sale_date, date(2026, 2, 1))
 
     def test_admin_change_form_rejects_sale_price_residual_when_not_sold(self):
         """Mesma inconsistência do teste acima, sentido oposto: status
