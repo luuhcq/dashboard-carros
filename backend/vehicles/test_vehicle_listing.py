@@ -184,9 +184,9 @@ class OrderingTests(AuthenticatedAPITestCase):
             self._ids(response), [str(self.low.pk), str(self.mid.pk), str(self.high.pk)]
         )
 
-    def test_ordering_by_aging(self):
-        # purchase_date mais antiga = mais dias em estoque = aging maior
-        response = self.client.get(self.list_url(ordering='-aging'))
+    def test_ordering_by_days_in_stock(self):
+        # purchase_date mais antiga = mais dias em estoque = days_in_stock maior
+        response = self.client.get(self.list_url(ordering='-days_in_stock'))
         self.assertEqual(
             self._ids(response), [str(self.low.pk), str(self.mid.pk), str(self.high.pk)]
         )

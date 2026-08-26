@@ -45,7 +45,9 @@ class AnnotationsMatchServiceTests(TestCase):
         expected_roi = metrics.roi if vehicle.status == VehicleStatus.SOLD else metrics.projected_roi
 
         self.assertEqual(annotated.total_cost, metrics.total_cost, f'{vehicle}: total_cost diverge')
-        self.assertEqual(annotated.aging, metrics.days_in_stock, f'{vehicle}: aging diverge')
+        self.assertEqual(
+            annotated.days_in_stock, metrics.days_in_stock, f'{vehicle}: days_in_stock diverge'
+        )
         self.assertEqual(
             round4(annotated.margin), round4(expected_margin), f'{vehicle}: margin diverge'
         )
@@ -127,4 +129,4 @@ class AnnotationsMatchServiceTests(TestCase):
         annotated = annotate_vehicle_metrics(
             Vehicle.objects.filter(pk=vehicle.pk), today=date(2026, 1, 1) + timedelta(days=45)
         ).get()
-        self.assertEqual(annotated.aging, 45)
+        self.assertEqual(annotated.days_in_stock, 45)
