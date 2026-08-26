@@ -59,8 +59,8 @@ def _aging_bucket(days_in_stock: int) -> str:
     aging_bucket= e dashboard-aging), porque aqui é comparação em Python
     (int) e lá é usado dentro de Q()/Count() do ORM — não dá pra
     compartilhar a mesma estrutura sem acoplar os dois módulos por pouco
-    ganho. Se as faixas mudarem, mudam nos dois lugares — não há teste
-    automático hoje que pegue divergência entre eles."""
+    ganho. Se as faixas mudarem, mudam nos dois lugares — paridade testada
+    em vehicles/test_aging_bucket_parity.py (Prompt 23)."""
     if days_in_stock <= 15:
         return '0-15'
     if days_in_stock <= 30:
