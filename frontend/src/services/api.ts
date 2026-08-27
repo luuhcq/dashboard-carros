@@ -21,13 +21,23 @@ const API_URL = import.meta.env.VITE_API_URL
  */
 export const UNAUTHORIZED_EVENT = 'auth:unauthorized'
 
+/**
+ * `body` carrega o JSON bruto da resposta de erro — em erros de validação
+ * (400) a API responde {"campo": ["mensagem"]}, sem chave "detail" nenhuma
+ * (Prompt 23, auditoria de formato de erro). `message` continua sendo um
+ * resumo pronto pra exibir direto (vem de "detail" quando existe, senão um
+ * fallback genérico) — quem precisa mapear erro por campo de formulário usa
+ * `body`, não tenta re-parsear `message`.
+ */
 export class ApiError extends Error {
   status: number
+  body: unknown
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, body: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.body = body
   }
 }
 
@@ -35,14 +45,17 @@ export interface ApiFetchOptions extends RequestInit {
   isAuthAttempt?: boolean
 }
 
-async function extractErrorMessage(response: Response): Promise<string> {
+async function parseErrorBody(response: Response): Promise<unknown> {
   try {
-    const body: unknown = await response.clone().json()
-    if (body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string') {
-      return body.detail
-    }
+    return await response.clone().json()
   } catch {
-    // corpo não é JSON (ou está vazio) — cai no fallback abaixo
+    return null
+  }
+}
+
+function extractErrorMessage(response: Response, body: unknown): string {
+  if (body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string') {
+    return body.detail
   }
   return `${response.status} ${response.statusText}`
 }
@@ -64,7 +77,8 @@ export async function apiFetch<T>(path: string, options?: ApiFetchOptions): Prom
     if (response.status === 401 && !isAuthAttempt) {
       window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
     }
-    throw new ApiError(await extractErrorMessage(response), response.status)
+    const body = await parseErrorBody(response)
+    throw new ApiError(extractErrorMessage(response, body), response.status, body)
   }
 
   if (response.status === 204) {

@@ -67,6 +67,43 @@ export interface VehicleListParams {
   ordering?: string
 }
 
+/**
+ * Payload de POST /api/vehicles/ (VehicleWriteSerializer) — sem `company`
+ * (read_only, o backend injeta a única Company existente, Prompt 30), sem
+ * `asking_price`/`sale_price`/`sale_date` (bloqueados ou fora de escopo
+ * deste formulário) e sem `status` (oculto de propósito — deixa o default
+ * PURCHASED do backend agir, ver VehicleNewPage.tsx).
+ */
+export interface VehicleCreatePayload {
+  brand: string
+  model: string
+  version?: string
+  manufacture_year?: number
+  model_year?: number
+  mileage?: number
+  plate?: string
+  chassis?: string
+  color?: string
+  source?: string
+  supplier_name?: string
+  purchase_date: string
+  purchase_price: number
+  fipe_reference_value?: number
+  fipe_code?: string
+  notes?: string
+}
+
+/**
+ * Resposta de 201 de POST /api/vehicles/ — corpo de VehicleWriteSerializer,
+ * não o de VehicleListSerializer nem VehicleDetailSerializer (sem métricas
+ * calculadas). Só o que a tela usa depois de criar: redirecionar pro
+ * detalhe do veículo certo.
+ */
+export interface VehicleCreateResponse {
+  id: string
+  internal_code: string
+}
+
 // Só os campos que o backend de fato aceita em ordering_fields
 // (VehicleViewSet.ordering_fields) — nunca inventar coluna "ordenável" que
 // a API não suporta.

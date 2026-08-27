@@ -1,5 +1,10 @@
 import { apiFetch } from '@/services/api'
-import type { VehicleListItem, VehicleListParams } from '@/types/vehicle'
+import type {
+  VehicleCreatePayload,
+  VehicleCreateResponse,
+  VehicleListItem,
+  VehicleListParams,
+} from '@/types/vehicle'
 
 function buildQueryString(params: VehicleListParams): string {
   const search = new URLSearchParams()
@@ -21,4 +26,13 @@ export async function fetchVehicles(params: VehicleListParams): Promise<VehicleL
   // — estoque de uma revenda fica na casa de dezenas/centenas de linhas) —
   // resposta é um array puro, não um envelope {results, count, ...}.
   return apiFetch<VehicleListItem[]>(`/api/vehicles/${buildQueryString(params)}`)
+}
+
+export async function createVehicle(
+  payload: VehicleCreatePayload,
+): Promise<VehicleCreateResponse> {
+  return apiFetch<VehicleCreateResponse>('/api/vehicles/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }
