@@ -100,6 +100,32 @@ class VehicleCreateTests(AuthenticatedAPITestCase):
         self.assertTrue(response.data['internal_code'])  # gerado automaticamente
         self.assertEqual(Vehicle.objects.count(), 1)
 
+    def test_create_without_company_field_succeeds_and_auto_assigns_company(self):
+        """company é read_only (Prompt 30) — não há endpoint pra um client
+        comum descobrir um UUID de Company, então o campo nem precisa vir
+        no payload. VehicleViewSet.perform_create() injeta a Company mais
+        antiga (a semeada por core/migrations/0002_seed_initial_company.py,
+        que já existe na base de teste antes de qualquer setUp rodar)."""
+        payload = self._valid_payload()
+        del payload['company']
+        response = self.client.post(self.list_url(), payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        vehicle = Vehicle.objects.get(id=response.data['id'])
+        self.assertEqual(vehicle.company.name, 'Revenda Principal')
+
+    def test_create_ignores_company_sent_by_client(self):
+        """company sendo read_only, um UUID mandado no payload é
+        silenciosamente ignorado pelo DRF (não vira erro, não é usado) — a
+        Company usada continua sendo a injetada por perform_create(), nunca
+        a do client."""
+        response = self.client.post(self.list_url(), self._valid_payload(), format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        vehicle = Vehicle.objects.get(id=response.data['id'])
+        self.assertNotEqual(vehicle.company_id, self.company.id)
+        self.assertEqual(vehicle.company.name, 'Revenda Principal')
+
     def test_create_missing_brand_is_rejected(self):
         payload = self._valid_payload()
         del payload['brand']

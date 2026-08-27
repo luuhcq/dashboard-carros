@@ -298,6 +298,15 @@ class VehicleWriteSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id',
             'internal_code',
+            # Multiempresa ainda não existe de verdade (core/models.py: "Modelo
+            # mínimo hoje — preparado para multiempresa futura, sem lógica de
+            # troca de contexto ou permissões por empresa ainda") e não há
+            # endpoint nenhum pra um usuário comum descobrir um UUID de
+            # Company — exigir esse campo no client não tem como ser
+            # cumprido. VehicleViewSet.perform_create() injeta a única
+            # Company existente; quando multiempresa existir de verdade,
+            # troca aqui pra vir de request.user, não do client.
+            'company',
             'deleted_at',
             'deletion_reason',
             'created_at',

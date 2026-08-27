@@ -4,8 +4,11 @@ from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import filters, generics, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
+
+from core.models import Company
 
 from .filters import VehicleFilter
 from .models import (
@@ -100,6 +103,21 @@ class VehicleViewSet(viewsets.ModelViewSet):
         if self.action == 'retrieve':
             return VehicleDetailSerializer
         return VehicleWriteSerializer
+
+    def perform_create(self, serializer):
+        """`company` é read_only em VehicleWriteSerializer (nenhum client
+        tem como descobrir um UUID de Company hoje — ver comentário em
+        Meta.read_only_fields do serializer) — injeta aqui a única Company
+        existente. `order_by('created_at').first()` pega a semeada pela
+        migration (core/migrations/0002_seed_initial_company.py) mesmo que
+        outras tenham sido criadas depois. Quando multiempresa existir de
+        verdade, troca pra vir de request.user, não da primeira linha da
+        tabela.
+        """
+        company = Company.objects.order_by('created_at').first()
+        if company is None:
+            raise ValidationError('Nenhuma empresa cadastrada — não é possível criar veículos.')
+        serializer.save(company=company)
 
     def destroy(self, request, *args, **kwargs):
         """Soft delete — nunca remove fisicamente. Exige deletion_reason no
