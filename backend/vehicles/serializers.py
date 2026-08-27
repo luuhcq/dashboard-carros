@@ -110,6 +110,7 @@ class VehicleListSerializer(serializers.ModelSerializer):
             'internal_code',
             'brand',
             'model',
+            'version',
             'model_year',
             'mileage',
             'status',

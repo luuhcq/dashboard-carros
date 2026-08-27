@@ -162,9 +162,9 @@ class VehicleListSerializerTests(TestCase):
         payload = render_json(VehicleListSerializer(vehicle))
 
         expected_keys = {
-            'id', 'internal_code', 'brand', 'model', 'model_year', 'mileage',
-            'status', 'purchase_date', 'fipe_reference_value', 'asking_price',
-            'total_cost', 'margin', 'aging_bucket', 'days_in_stock',
+            'id', 'internal_code', 'brand', 'model', 'version', 'model_year',
+            'mileage', 'status', 'purchase_date', 'fipe_reference_value',
+            'asking_price', 'total_cost', 'margin', 'aging_bucket', 'days_in_stock',
         }
         self.assertEqual(set(payload.keys()), expected_keys)
 
