@@ -13,6 +13,21 @@ function jsonResponse(body: unknown, status: number) {
   })
 }
 
+/** VehiclesPage faz sua própria chamada real a /api/vehicles/ — precisa de
+ * uma resposta moldada como array, não o mesmo objeto de /me/. */
+function stubAuthenticatedFetch() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/vehicles/')) {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      return Promise.resolve(jsonResponse({ id: 1, username: 'demo' }, 200))
+    }),
+  )
+}
+
 function renderRoutesAt(path: string) {
   // createMemoryRouter com o MESMO array `routes` usado em produção — testa
   // a árvore de rotas de verdade (RequireAuth + AppLayout aninhados), não
@@ -41,7 +56,7 @@ describe('estrutura de rotas (RequireAuth + AppLayout)', () => {
     renderRoutesAt('/vehicles')
 
     await screen.findByText('Acesse o dashboard com seu usuário e senha.')
-    expect(screen.queryByText('Estoque de veículos (Prompts 28-38)')).toBeNull()
+    expect(screen.queryByText('Estoque')).toBeNull()
   })
 
   it('sem sessão, outra rota protegida (/vehicles/42) também redireciona pro /login', async () => {
@@ -56,14 +71,11 @@ describe('estrutura de rotas (RequireAuth + AppLayout)', () => {
   })
 
   it('com sessão válida, /vehicles renderiza a página filha certa dentro do AppLayout', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(jsonResponse({ id: 1, username: 'demo' }, 200)),
-    )
+    stubAuthenticatedFetch()
 
     renderRoutesAt('/vehicles')
 
-    await screen.findByText('Estoque de veículos (Prompts 28-38)')
+    await screen.findByRole('heading', { name: 'Estoque' })
     // prova que é a página CERTA (não Dashboard, não VehicleDetail) e que o
     // AppLayout (layout route pai) compôs junto — header com o nome do
     // usuário logado presente na mesma árvore renderizada.
@@ -72,15 +84,12 @@ describe('estrutura de rotas (RequireAuth + AppLayout)', () => {
   })
 
   it('com sessão válida, /vehicles/42 renderiza VehicleDetailPage (não /vehicles nem /)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(jsonResponse({ id: 1, username: 'demo' }, 200)),
-    )
+    stubAuthenticatedFetch()
 
     renderRoutesAt('/vehicles/42')
 
     await screen.findByText('Detalhe do veículo #42 (Prompts 28-38)')
-    expect(screen.queryByText('Estoque de veículos (Prompts 28-38)')).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Estoque' })).toBeNull()
   })
 
   it('rota desconhecida renderiza NotFoundPage', async () => {
