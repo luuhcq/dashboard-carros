@@ -1,9 +1,15 @@
-import { Navigate } from 'react-router-dom'
+import { Navigate, Outlet } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
 
-export function RequireAuth({ children }: { children: React.ReactNode }) {
+/**
+ * Layout route: monta uma vez na raiz da árvore de rotas protegidas
+ * (ver router/index.tsx) em vez de embrulhar cada página individualmente.
+ * Só decide "pode passar ou não" — quem renderiza a página de fato é o
+ * <Outlet /> das rotas filhas.
+ */
+export function RequireAuth() {
   const { data: user, isPending, isError, refetch, isRefetching } = useCurrentUser()
 
   if (isPending) return null
@@ -28,5 +34,5 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 
   if (!user) return <Navigate to="/login" replace />
 
-  return children
+  return <Outlet />
 }

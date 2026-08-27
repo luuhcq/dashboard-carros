@@ -3,6 +3,7 @@ import { Controller, useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
 
+import { ApiStatus } from '@/components/ApiStatus'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -191,6 +192,11 @@ export function StorybookPage() {
           temporária, não faz parte da navegação real do produto.
         </p>
       </div>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-medium">Conectividade com a API</h2>
+        <ApiStatus />
+      </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-medium">Buttons</h2>

@@ -47,17 +47,19 @@ function renderProtectedTree(client: QueryClient, extra?: React.ReactNode) {
       <AuthSessionWatcher />
       <MemoryRouter initialEntries={['/protected']}>
         <Routes>
-          <Route
-            path="/protected"
-            element={
-              <>
-                <RequireAuth>
+          {/* Mesma estrutura do router real: RequireAuth como layout route
+              (Outlet), não embrulhando a página individualmente. */}
+          <Route element={<RequireAuth />}>
+            <Route
+              path="/protected"
+              element={
+                <>
                   <p>Conteúdo protegido</p>
-                </RequireAuth>
-                {extra}
-              </>
-            }
-          />
+                  {extra}
+                </>
+              }
+            />
+          </Route>
           <Route path="/login" element={<p>Marcador da página de login</p>} />
         </Routes>
       </MemoryRouter>
