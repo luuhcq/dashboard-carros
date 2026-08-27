@@ -13,15 +13,82 @@ function jsonResponse(body: unknown, status: number) {
   })
 }
 
-/** VehiclesPage faz sua própria chamada real a /api/vehicles/ — precisa de
- * uma resposta moldada como array, não o mesmo objeto de /me/. */
+const MOCK_VEHICLE_DETAIL = {
+  id: '42',
+  internal_code: 'CAR-000042',
+  company: 'company-id',
+  brand: 'Honda',
+  model: 'Civic',
+  version: 'EXL 2.0',
+  manufacture_year: null,
+  model_year: 2022,
+  mileage: 32000,
+  plate: null,
+  chassis: null,
+  color: null,
+  status: 'LISTED',
+  source: null,
+  supplier_name: null,
+  purchase_date: '2026-01-05',
+  purchase_price: '45000.00',
+  fipe_reference_value: '52000.00',
+  fipe_code: null,
+  asking_price: '55000.00',
+  sale_date: null,
+  sale_price: null,
+  notes: null,
+  deleted_at: null,
+  deletion_reason: null,
+  created_at: '2026-01-05T00:00:00Z',
+  updated_at: '2026-01-05T00:00:00Z',
+  metrics: {
+    total_expenses: '0.00',
+    total_cost: '45000.00',
+    fipe_percentage_paid: '0.8654',
+    fipe_discount: '0.1346',
+    projected_profit: '10000.00',
+    projected_margin: '0.1818',
+    projected_roi: '0.2222',
+    profit: null,
+    margin: null,
+    roi: null,
+    days_in_stock: 234,
+    aging_bucket: '90+',
+    profit_per_day: null,
+  },
+}
+
+/**
+ * VehiclesPage e VehicleDetailPage fazem suas próprias chamadas reais —
+ * precisa distinguir listagem (array), detalhe de um id (objeto com
+ * metrics) e dashboard-summary (objeto agregado) do mesmo jeito que /me/,
+ * senão VehiclePurchaseSection quebra tentando ler
+ * `vehicle.metrics.fipe_percentage_paid` de um objeto sem `metrics`.
+ */
 function stubAuthenticatedFetch() {
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
+      if (/\/api\/vehicles\/[^/?]+\/$/.test(url)) {
+        return Promise.resolve(jsonResponse(MOCK_VEHICLE_DETAIL, 200))
+      }
       if (url.includes('/api/vehicles/')) {
         return Promise.resolve(jsonResponse([], 200))
+      }
+      if (url.includes('/api/dashboard/summary/')) {
+        return Promise.resolve(
+          jsonResponse(
+            {
+              vehicles_in_stock: 0,
+              capital_employed: '0.00',
+              total_asking_price: '0.00',
+              potential_profit: '0.00',
+              average_aging_days: null,
+            },
+            200,
+          ),
+        )
       }
       return Promise.resolve(jsonResponse({ id: 1, username: 'demo' }, 200))
     }),
@@ -88,7 +155,7 @@ describe('estrutura de rotas (RequireAuth + AppLayout)', () => {
 
     renderRoutesAt('/vehicles/42')
 
-    await screen.findByText('Detalhe do veículo #42 (Prompts 28-38)')
+    await screen.findByRole('heading', { name: /Honda Civic/ })
     expect(screen.queryByRole('heading', { name: 'Estoque' })).toBeNull()
   })
 

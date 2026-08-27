@@ -1,7 +1,6 @@
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -12,23 +11,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { VehicleStatusBadge } from '@/components/vehicles/VehicleStatusBadge'
 import type { useVehicleFilters } from '@/hooks/useVehicleFilters'
 import { cn } from '@/lib/utils'
-import type { VehicleListItem, VehicleOrderingField, VehicleStatus } from '@/types/vehicle'
-import { VEHICLE_STATUS_LABELS } from '@/types/vehicle'
+import type { VehicleListItem, VehicleOrderingField } from '@/types/vehicle'
 import { formatCurrency } from '@/utils/formatCurrency'
 import { formatDate } from '@/utils/formatDate'
 import { formatMileage } from '@/utils/formatMileage'
 import { formatPercent } from '@/utils/formatPercent'
-
-const STATUS_BADGE_CLASS: Record<VehicleStatus, string> = {
-  PURCHASED: 'border-transparent bg-secondary text-secondary-foreground',
-  IN_PREPARATION: 'border-transparent bg-secondary text-secondary-foreground',
-  READY: 'border-transparent bg-secondary text-secondary-foreground',
-  LISTED: 'border-transparent bg-primary/10 text-primary',
-  RESERVED: 'border-transparent bg-warning/15 text-warning-foreground',
-  SOLD: 'border-transparent bg-success/10 text-success',
-}
 
 const COLUMN_COUNT = 10
 
@@ -128,9 +118,7 @@ export function VehiclesTable({
         <TableCell>{vehicle.model_year ?? '—'}</TableCell>
         <TableCell>{formatMileage(vehicle.mileage)}</TableCell>
         <TableCell>
-          <Badge className={STATUS_BADGE_CLASS[vehicle.status]}>
-            {VEHICLE_STATUS_LABELS[vehicle.status]}
-          </Badge>
+          <VehicleStatusBadge status={vehicle.status} />
         </TableCell>
         <TableCell>{formatDate(vehicle.purchase_date)}</TableCell>
         <TableCell>{formatCurrency(vehicle.fipe_reference_value)}</TableCell>
