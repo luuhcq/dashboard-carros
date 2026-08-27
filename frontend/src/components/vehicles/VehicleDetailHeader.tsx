@@ -1,18 +1,20 @@
 import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
+import { AddExpenseDialog } from '@/components/vehicles/AddExpenseDialog'
 import { VehicleStatusBadge } from '@/components/vehicles/VehicleStatusBadge'
 import type { VehicleDetail } from '@/types/vehicle'
 import { formatMileage } from '@/utils/formatMileage'
 
 /**
- * Ações do briefing original que ainda não têm tela (Prompt 33/35/36) —
+ * Ações do briefing original que ainda não têm tela (Prompt 35/36) —
  * aparecem desabilitadas com "(em breve)" em vez de somem sem explicação
  * ou ficarem clicáveis sem fazer nada: um botão que não responde ao clique
  * é pior que um botão visivelmente desabilitado, porque parece bug em vez
- * de "ainda não existe".
+ * de "ainda não existe". "Adicionar despesa" saiu dessa lista no Prompt 33
+ * — agora é o AddExpenseDialog de verdade, não mais um placeholder.
  */
-const UPCOMING_ACTIONS = ['Adicionar despesa', 'Alterar preço', 'Registrar venda']
+const UPCOMING_ACTIONS = ['Alterar preço', 'Registrar venda']
 
 export function VehicleDetailHeader({ vehicle }: { vehicle: VehicleDetail }) {
   return (
@@ -37,6 +39,7 @@ export function VehicleDetailHeader({ vehicle }: { vehicle: VehicleDetail }) {
           <Button asChild variant="outline">
             <Link to={`/vehicles/${vehicle.id}/edit`}>Editar veículo</Link>
           </Button>
+          <AddExpenseDialog vehicleId={vehicle.id} />
           {UPCOMING_ACTIONS.map((label) => (
             <Button key={label} variant="outline" disabled>
               {label} <span className="text-xs text-muted-foreground">(em breve)</span>

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { VehicleDetailHeader } from '@/components/vehicles/VehicleDetailHeader'
+import { VehicleExpensesSection } from '@/components/vehicles/VehicleExpensesSection'
 import { VehiclePurchaseSection } from '@/components/vehicles/VehiclePurchaseSection'
 import { useVehicle } from '@/hooks/useVehicle'
 import { ApiError } from '@/services/api'
@@ -60,6 +61,7 @@ export function VehicleDetailPage() {
     <div className="flex flex-col gap-6">
       <VehicleDetailHeader vehicle={vehicle} />
       <VehiclePurchaseSection vehicle={vehicle} />
+      <VehicleExpensesSection vehicle={vehicle} />
     </div>
   )
 }
