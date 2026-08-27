@@ -171,6 +171,11 @@ else:
 
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[])
 
+# Autenticação via JWT em cookie httpOnly exige credentials: include/withCredentials
+# no cliente — sem Access-Control-Allow-Credentials: true o navegador bloqueia
+# a resposta mesmo com a origem já permitida acima.
+CORS_ALLOW_CREDENTIALS = True
+
 
 # Django REST Framework
 
