@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { VehicleDetailHeader } from '@/components/vehicles/VehicleDetailHeader'
 import { VehicleExpensesSection } from '@/components/vehicles/VehicleExpensesSection'
 import { VehiclePurchaseSection } from '@/components/vehicles/VehiclePurchaseSection'
+import { VehicleResultSection } from '@/components/vehicles/VehicleResultSection'
 import { useVehicle } from '@/hooks/useVehicle'
 import { ApiError } from '@/services/api'
 
@@ -62,6 +63,7 @@ export function VehicleDetailPage() {
       <VehicleDetailHeader vehicle={vehicle} />
       <VehiclePurchaseSection vehicle={vehicle} />
       <VehicleExpensesSection vehicle={vehicle} />
+      <VehicleResultSection vehicle={vehicle} />
     </div>
   )
 }
