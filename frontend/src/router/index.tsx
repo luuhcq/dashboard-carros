@@ -7,6 +7,7 @@ import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { StorybookPage } from '@/pages/StorybookPage'
 import { VehicleDetailPage } from '@/pages/VehicleDetailPage'
+import { VehicleEditPage } from '@/pages/VehicleEditPage'
 import { VehicleNewPage } from '@/pages/VehicleNewPage'
 import { VehiclesPage } from '@/pages/VehiclesPage'
 
@@ -31,6 +32,7 @@ export const routes: RouteObject[] = [
           { path: '/vehicles', element: <VehiclesPage /> },
           { path: '/vehicles/new', element: <VehicleNewPage /> },
           { path: '/vehicles/:id', element: <VehicleDetailPage /> },
+          { path: '/vehicles/:id/edit', element: <VehicleEditPage /> },
         ],
       },
     ],

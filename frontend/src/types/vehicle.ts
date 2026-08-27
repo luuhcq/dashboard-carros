@@ -68,13 +68,15 @@ export interface VehicleListParams {
 }
 
 /**
- * Payload de POST /api/vehicles/ (VehicleWriteSerializer) — sem `company`
- * (read_only, o backend injeta a única Company existente, Prompt 30), sem
- * `asking_price`/`sale_price`/`sale_date` (bloqueados ou fora de escopo
- * deste formulário) e sem `status` (oculto de propósito — deixa o default
- * PURCHASED do backend agir, ver VehicleNewPage.tsx).
+ * Campos cadastrais que POST/PATCH aceitam de fato (VehicleWriteSerializer)
+ * — sem `company` (read_only, o backend injeta a única Company existente,
+ * Prompt 30), sem `asking_price`/`sale_price`/`sale_date` (bloqueados ou
+ * fora de escopo deste formulário) e sem `status` (oculto de propósito —
+ * deixa o default PURCHASED do backend agir na criação; na edição, mesma
+ * decisão por consistência — mudar status é fluxo próprio, fora de escopo
+ * do Prompt 31, ver VehicleForm.tsx).
  */
-export interface VehicleCreatePayload {
+export interface VehicleWritableFields {
   brand: string
   model: string
   version?: string
@@ -93,15 +95,77 @@ export interface VehicleCreatePayload {
   notes?: string
 }
 
+/** Payload de POST /api/vehicles/ — todos os campos obrigatórios de VehicleWritableFields presentes. */
+export type VehicleCreatePayload = VehicleWritableFields
+
 /**
- * Resposta de 201 de POST /api/vehicles/ — corpo de VehicleWriteSerializer,
- * não o de VehicleListSerializer nem VehicleDetailSerializer (sem métricas
- * calculadas). Só o que a tela usa depois de criar: redirecionar pro
- * detalhe do veículo certo.
+ * Payload de PATCH /api/vehicles/{id}/ — parcial de verdade (confirmado nos
+ * testes do backend, test_patch_common_field_succeeds manda só 1 campo):
+ * VehicleForm em modo edit só inclui os campos que o usuário de fato mudou
+ * (RHF dirtyFields), nunca reenvia o formulário inteiro.
  */
-export interface VehicleCreateResponse {
+export type VehicleUpdatePayload = Partial<VehicleWritableFields>
+
+/**
+ * Resposta de POST (201) e PATCH (200) — corpo de VehicleWriteSerializer,
+ * não o de VehicleListSerializer nem VehicleDetailSerializer (sem métricas
+ * calculadas, ver VehicleDetail abaixo). Só o que as telas usam depois de
+ * escrever: `id` pra redirecionar pro detalhe do veículo certo.
+ */
+export interface VehicleWriteResponse {
   id: string
   internal_code: string
+}
+
+/**
+ * Corpo de GET /api/vehicles/{id}/ (VehicleDetailSerializer) — confirmado
+ * via curl no Prompt 30. Inclui asking_price/sale_date/sale_price (aqui só
+ * leitura — nenhum formulário deste app os edita) e `metrics`, o objeto de
+ * métricas calculadas que a listagem não expõe.
+ */
+export interface VehicleDetail {
+  id: string
+  internal_code: string | null
+  company: string
+  brand: string
+  model: string
+  version: string | null
+  manufacture_year: number | null
+  model_year: number | null
+  mileage: number | null
+  plate: string | null
+  chassis: string | null
+  color: string | null
+  status: VehicleStatus
+  source: string | null
+  supplier_name: string | null
+  purchase_date: string
+  purchase_price: string
+  fipe_reference_value: string | null
+  fipe_code: string | null
+  asking_price: string | null
+  sale_date: string | null
+  sale_price: string | null
+  notes: string | null
+  deleted_at: string | null
+  deletion_reason: string | null
+  created_at: string
+  updated_at: string
+  metrics: {
+    total_expenses: string
+    total_cost: string
+    fipe_percentage_paid: string | null
+    fipe_discount: string | null
+    projected_profit: string | null
+    projected_margin: string | null
+    projected_roi: string | null
+    profit: string | null
+    margin: string | null
+    roi: string | null
+    days_in_stock: number
+    aging_bucket: AgingBucket
+    profit_per_day: string | null
+  }
 }
 
 // Só os campos que o backend de fato aceita em ordering_fields

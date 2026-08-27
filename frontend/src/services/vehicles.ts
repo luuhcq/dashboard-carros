@@ -1,9 +1,11 @@
 import { apiFetch } from '@/services/api'
 import type {
   VehicleCreatePayload,
-  VehicleCreateResponse,
+  VehicleDetail,
   VehicleListItem,
   VehicleListParams,
+  VehicleUpdatePayload,
+  VehicleWriteResponse,
 } from '@/types/vehicle'
 
 function buildQueryString(params: VehicleListParams): string {
@@ -28,11 +30,25 @@ export async function fetchVehicles(params: VehicleListParams): Promise<VehicleL
   return apiFetch<VehicleListItem[]>(`/api/vehicles/${buildQueryString(params)}`)
 }
 
+export async function fetchVehicle(id: string): Promise<VehicleDetail> {
+  return apiFetch<VehicleDetail>(`/api/vehicles/${id}/`)
+}
+
 export async function createVehicle(
   payload: VehicleCreatePayload,
-): Promise<VehicleCreateResponse> {
-  return apiFetch<VehicleCreateResponse>('/api/vehicles/', {
+): Promise<VehicleWriteResponse> {
+  return apiFetch<VehicleWriteResponse>('/api/vehicles/', {
     method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateVehicle(
+  id: string,
+  payload: VehicleUpdatePayload,
+): Promise<VehicleWriteResponse> {
+  return apiFetch<VehicleWriteResponse>(`/api/vehicles/${id}/`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   })
 }
